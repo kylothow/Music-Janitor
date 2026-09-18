@@ -9,9 +9,9 @@
        original. Tags, embedded art and cue sheets carry over automatically.
        Files already encoded by your installed flac version are skipped
        (vendor-string check).
-    2) Encodes an .opus twin at -OpusBitrate (default 128 kbit/s VBR), copying
-       all tags and embedded artwork (opusenc does this automatically from FLAC
-       input).
+    2) Encodes an .opus twin at -OpusBitrate (default 128 kbit/s VBR), carrying
+       over only the tags the player supports (TITLE, ALBUM, ARTIST, GENRE,
+       DATE, TRACKNUMBER, DISCNUMBER).
     Existing .opus files newer than their .flac are skipped unless -Force.
 .EXAMPLE
     .\Convert-Music.ps1 -Path "D:\Music"
@@ -39,6 +39,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# tags kept in the .opus files (all others are stripped). Add/remove to taste.
+$script:KeepTags    = @('TITLE', 'ALBUM', 'ARTIST', 'GENRE', 'DATE', 'TRACKNUMBER', 'DISCNUMBER')
+# used only if the canonical tag is absent
+$script:TagSynonyms = @{ DATE = 'YEAR'; TRACKNUMBER = 'TRACK'; DISCNUMBER = 'DISC' }
+
 function Resolve-Tool([string]$Name, [string]$ExplicitPath) {
     if ($ExplicitPath) {
         if (-not (Test-Path -LiteralPath $ExplicitPath -PathType Leaf)) { throw "$Name not found at '$ExplicitPath'." }
@@ -52,13 +57,39 @@ function Resolve-Tool([string]$Name, [string]$ExplicitPath) {
 $flac    = Resolve-Tool 'flac'    $FlacExe
 $opusenc = Resolve-Tool 'opusenc' $OpusencExe
 
-# metaflac.exe ships with flac.exe; used to skip files your flac already
-# encoded. The script works without it, but then every FLAC is re-encoded every
-# run.
-$metaflac = Get-Command 'metaflac' -ErrorAction SilentlyContinue
-if (-not $metaflac) {
+# metaflac.exe ships with flac.exe; used for vendor-string skipping and tag
+# filtering.
+$metaflacPath = Get-Command 'metaflac' -ErrorAction SilentlyContinue
+if ($metaflacPath) { $script:metaflac = $metaflacPath.Source }
+else {
     $sibling = Join-Path (Split-Path -Parent $flac) 'metaflac.exe'
-    if (Test-Path -LiteralPath $sibling) { $metaflac = $sibling }
+    if (Test-Path -LiteralPath $sibling) { $script:metaflac = $sibling } else { $script:metaflac = $null }
+}
+if (-not $script:metaflac) {
+    Write-Warning "metaflac.exe not found: Opus tag filtering will be skipped."
+}
+
+function Get-OpusCommentArgs([string]$FlacPath) {
+    # returns an array of '--comment','TAG=value' argument pairs for the allowed
+    # tags
+    if (-not $script:metaflac) { return $null }
+    $lines = (& $script:metaflac --export-tags-to=- "$FlacPath") | Where-Object { $_ -and $_.IndexOf('=') -gt 0 }
+    $vals  = @{}
+    foreach ($l in $lines) {
+        $i = $l.IndexOf('='); $n = $l.Substring(0, $i).Trim().ToUpperInvariant()
+        if (-not $vals.ContainsKey($n)) { $vals[$n] = New-Object System.Collections.Generic.List[string] }
+        $vals[$n].Add($l.Substring($i + 1))
+    }
+    $out = @()
+    foreach ($t in $script:KeepTags) {
+        $src = $t
+        if (-not $vals.ContainsKey($t)) {
+            $syn = $script:TagSynonyms[$t]
+            if ($syn -and $vals.ContainsKey($syn)) { $src = $syn } else { continue }
+        }
+        foreach ($v in $vals[$src]) { $out += @('--comment', "$t=$v") }
+    }
+    return ,$out
 }
 
 # installed flac version, e.g. "1.5.0"
@@ -139,9 +170,13 @@ for ($i = 0; $i -lt $files.Count; $i++) {
         }
         else {
             try {
-                # opusenc copies tags and embedded artwork from FLAC input by
-                # default
-                & $opusenc --quiet --bitrate $OpusBitrate "$($f.FullName)" "$opus"
+                $commentArgs = Get-OpusCommentArgs "$($f.FullName)"
+                $encArgs     = @('--quiet', "--bitrate=$OpusBitrate")
+                if ($commentArgs -is [array]) {
+                    $encArgs += '--discard-comments'
+                    $encArgs += $commentArgs
+                }
+                & $opusenc @encArgs "$($f.FullName)" "$opus"
                 if ($LASTEXITCODE -ne 0) { throw "opusenc.exe exited with code $LASTEXITCODE" }
                 $opusMade++
             }
