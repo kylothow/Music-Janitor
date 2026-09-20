@@ -76,6 +76,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# fail fast on an invalid -Path instead of dying later with a confusing error
+if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+    throw "-Path must be an existing folder, got: '$Path'"
+}
+
 # tags kept in the .opus files (all others are stripped). Add/remove to taste.
 $KeepTags    = @('TITLE', 'ALBUM', 'ARTIST', 'GENRE', 'DATE', 'TRACKNUMBER', 'DISCNUMBER')
 # used only if the canonical tag is absent
@@ -225,7 +230,8 @@ $threadArgs = @()
 try { if ([version]$flacVersion -ge [version]'1.5.0') { $threadArgs = @("--threads=$([Environment]::ProcessorCount)") } } catch { }
 
 $root  = (Resolve-Path -LiteralPath $Path).Path.TrimEnd('\')
-$files = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter *.flac -Force)
+# -ErrorAction SilentlyContinue: an unreadable subfolder is skipped, not fatal
+$files = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter *.flac -Force -ErrorAction SilentlyContinue)
 if ($files.Count -eq 0) { Write-Host "No FLAC files found under '$root'."; return }
 Write-Host "Found $($files.Count) FLAC file(s). flac v$flacVersion, Opus target ${OpusBitrate}k, cover ${CoverMaxDim}px/q$CoverJpegQuality."
 
