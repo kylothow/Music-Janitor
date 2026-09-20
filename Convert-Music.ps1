@@ -77,12 +77,12 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # tags kept in the .opus files (all others are stripped)
-$script:KeepTags     = @('TITLE', 'ALBUM', 'ARTIST', 'GENRE', 'DATE', 'TRACKNUMBER', 'DISCNUMBER')
+$KeepTags    = @('TITLE', 'ALBUM', 'ARTIST', 'GENRE', 'DATE', 'TRACKNUMBER', 'DISCNUMBER')
 # used only if the canonical tag is absent
-$script:TagSynonyms  = @{ DATE = 'YEAR'; TRACKNUMBER = 'TRACK'; DISCNUMBER = 'DISC' }
+$TagSynonyms = @{ DATE = 'YEAR'; TRACKNUMBER = 'TRACK'; DISCNUMBER = 'DISC' }
 
 # folder image file names recognized in each folder, in priority order
-$script:CoverNames = @('cover.jpg', 'cover.jpeg', 'folder.jpg', 'folder.jpeg',
+$CoverNames = @('cover.jpg', 'cover.jpeg', 'folder.jpg', 'folder.jpeg',
     'front.jpg', 'front.jpeg', 'album.jpg', 'album.jpeg',
     'cover.png', 'folder.png', 'front.png', 'album.png')
 
@@ -97,28 +97,40 @@ function Resolve-Tool([string]$Name, [string]$ExplicitPath) {
     throw "$Name not found on PATH. Install it, or pass $paramName with the full path."
 }
 
+function Invoke-Checked([string]$ExePath, [string[]]$Arguments) {
+    # run an external tool and throw on failure, so callers can catch and report
+    & $ExePath @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw ("{0} exited with code {1}" -f (Split-Path -Leaf $ExePath), $LASTEXITCODE)
+    }
+}
+
 $flac    = Resolve-Tool 'flac'    $FlacExe
 $opusenc = Resolve-Tool 'opusenc' $OpusencExe
 
-# metaflac.exe ships with flac.exe; needed for picture removal and tag filtering
-$metaflacPath = Get-Command 'metaflac' -ErrorAction SilentlyContinue
-if ($metaflacPath) { $script:metaflac = $metaflacPath.Source }
+# metaflac.exe ships with flac.exe; needed for picture removal and tag
+# filtering. Without it the script degrades gracefully: no art stripping, all
+# tags copied.
+$metaflac = $null
+$mfCmd    = Get-Command 'metaflac' -ErrorAction SilentlyContinue
+if ($mfCmd) { $metaflac = $mfCmd.Source }
 else {
-    $sibling = Join-Path (Split-Path -Parent $flac) 'metaflac.exe'
-    if (Test-Path -LiteralPath $sibling) { $script:metaflac = $sibling } else { $script:metaflac = $null }
+    $mfSibling = Join-Path (Split-Path -Parent $flac) 'metaflac.exe'
+    if (Test-Path -LiteralPath $mfSibling -PathType Leaf) { $metaflac = $mfSibling }
 }
-if (-not $script:metaflac) {
-    Write-Warning "metaflac.exe not found: embedded art will NOT be removed from FLACs, and Opus tag filtering will fall back to copying all tags."
+$tagFilter = [bool]$metaflac  # true = opus files carry only the allowed tags
+if (-not $metaflac) {
+    Write-Warning "metaflac.exe not found: embedded art will NOT be removed from FLACs, and Opus tag filtering will be skipped."
 }
 
-$script:drawingOk = $true
+$drawingOk = $true
 try { Add-Type -AssemblyName System.Drawing } catch {
-    $script:drawingOk = $false
+    $drawingOk = $false
     Write-Warning "Could not load System.Drawing (cover resizing unavailable): $($_.Exception.Message)"
 }
 
-$script:folderCoverCache = @{}  # folder -> temp .jpg path (or $null)
-$script:tempCovers       = New-Object System.Collections.Generic.List[string]
+$folderCoverCache = @{}  # folder -> temp .jpg path (or $null)
+$tempCovers       = New-Object System.Collections.Generic.List[string]
 
 function Convert-CoverArt([string]$Source, [string]$Destination, [int]$MaxDim, [int]$JpegQuality) {
     $img = [System.Drawing.Image]::FromFile($Source)
@@ -161,11 +173,11 @@ function Convert-CoverArt([string]$Source, [string]$Destination, [int]$MaxDim, [
 function Get-FolderCover([string]$Dir) {
     # returns the path of a resized cover JPEG for this folder (cached), or
     # $null
-    if ($script:folderCoverCache.ContainsKey($Dir)) { return $script:folderCoverCache[$Dir] }
+    if ($folderCoverCache.ContainsKey($Dir)) { return $folderCoverCache[$Dir] }
     $jpg = $null
-    if ($script:drawingOk) {
+    if ($drawingOk) {
         $src = $null
-        foreach ($n in $script:CoverNames) {
+        foreach ($n in $CoverNames) {
             $p = Join-Path $Dir $n
             if (Test-Path -LiteralPath $p -PathType Leaf) { $src = $p; break }
         }
@@ -173,7 +185,7 @@ function Get-FolderCover([string]$Dir) {
             try {
                 $jpg = Join-Path ([System.IO.Path]::GetTempPath()) ("opuscover-" + [guid]::NewGuid().ToString('N') + ".jpg")
                 Convert-CoverArt -Source $src -Destination $jpg -MaxDim $CoverMaxDim -JpegQuality $CoverJpegQuality
-                [void]$script:tempCovers.Add($jpg)
+                [void]$tempCovers.Add($jpg)
             } catch {
                 Write-Warning "Cover '$src' could not be processed ($($_.Exception.Message)) - keeping embedded art for: $Dir"
                 if ($jpg -and (Test-Path -LiteralPath $jpg)) { Remove-Item -LiteralPath $jpg -Force -ErrorAction SilentlyContinue }
@@ -181,31 +193,29 @@ function Get-FolderCover([string]$Dir) {
             }
         }
     }
-    $script:folderCoverCache[$Dir] = $jpg
+    $folderCoverCache[$Dir] = $jpg
     return $jpg
 }
 
-function Get-OpusCommentArgs([string]$FlacPath) {
-    # returns [array of '--comment','TAG=value',...] for the allowed tags, or
-    # $null if unavailable
-    if (-not $script:metaflac) { return $null }
-    $lines = (& $script:metaflac --export-tags-to=- "$FlacPath") | Where-Object { $_ -and $_.IndexOf('=') -gt 0 }
+function New-OpusTagArgs([string]$FlacPath) {
+    # emits '--comment','TAG=value' argument pairs for the allowed tags. The
+    # output may legitimately be empty; the caller wraps it with @().
+    if (-not $metaflac) { return }
+    $lines = (& $metaflac --export-tags-to=- $FlacPath) | Where-Object { $_ -and $_.IndexOf('=') -gt 0 }
     $vals  = @{}
     foreach ($l in $lines) {
         $i = $l.IndexOf('='); $n = $l.Substring(0, $i).Trim().ToUpperInvariant()
         if (-not $vals.ContainsKey($n)) { $vals[$n] = New-Object System.Collections.Generic.List[string] }
         $vals[$n].Add($l.Substring($i + 1))
     }
-    $out = @()
-    foreach ($t in $script:KeepTags) {
+    foreach ($t in $KeepTags) {
         $src = $t
         if (-not $vals.ContainsKey($t)) {
-            $syn = $script:TagSynonyms[$t]
+            $syn = $TagSynonyms[$t]
             if ($syn -and $vals.ContainsKey($syn)) { $src = $syn } else { continue }
         }
-        foreach ($v in $vals[$src]) { $out += @('--comment', "$t=$v") }
+        foreach ($v in $vals[$src]) { '--comment', "$t=$v" }
     }
-    return ,$out
 }
 
 # installed flac version, e.g. "1.5.0"
@@ -232,8 +242,8 @@ try {
 
         # ---------- 1) lossless FLAC -> FLAC re-encode ----------
         $needReencode = -not $NoReencode
-        if ($needReencode -and -not $Force -and $script:metaflac -and $flacVersion) {
-            $vendor = (& $script:metaflac --list --block-type=VORBIS_COMMENT "$($f.FullName)") |
+        if ($needReencode -and -not $Force -and $metaflac -and $flacVersion) {
+            $vendor = (& $metaflac --list --block-type=VORBIS_COMMENT $f.FullName) |
                 Where-Object { $_ -match 'vendor string:' } | Select-Object -First 1
             if ("$vendor" -match ("libFLAC " + [regex]::Escape($flacVersion) + "(\s|$)")) {
                 # already encoded by this exact flac version
@@ -249,12 +259,11 @@ try {
             try {
                 # -8 = max preset; --verify = decode & compare while encoding;
                 # -f  = in-place replace via temp file, only on success
-                & $flac -8 --verify -s -f @threadArgs -- "$($f.FullName)"
-                if ($LASTEXITCODE -ne 0) { throw "flac.exe exited with code $LASTEXITCODE" }
-                # keep original timestamps
-                (Get-Item -LiteralPath $f.FullName).LastWriteTimeUtc = $mtime
+                Invoke-Checked $flac (@('-8', '--verify', '-s', '-f') + $threadArgs + @('--', $f.FullName))
+                $flacNow = Get-Item -LiteralPath $f.FullName
+                $flacNow.LastWriteTimeUtc = $mtime  # keep original timestamps
                 $reencoded++
-                $bytesSaved += $sizeBefore - (Get-Item -LiteralPath $f.FullName).Length
+                $bytesSaved += $sizeBefore - $flacNow.Length
             }
             catch {
                 $failed++
@@ -266,16 +275,18 @@ try {
         # ---------- 2) strip embedded art from the FLAC ----------
         $cover       = Get-FolderCover $f.DirectoryName
         $strippedNow = $false
-        if ($cover) {
-            if (-not $script:metaflac) {
-                # no metaflac -> can't strip; opus still gets the new cover (see
-                # below)
-            }
-            elseif ([bool](& $script:metaflac --list --block-type=PICTURE "$($f.FullName)" |
-                Where-Object { $_ -match 'METADATA block' })) {
-                & $script:metaflac --dont-use-padding --preserve-modtime --remove --block-type=PICTURE "$($f.FullName)"
-                if ($LASTEXITCODE -eq 0) { $strippedNow = $true; $picsStripped++ }
-                else { Write-Warning "Could not remove embedded art from: $($f.FullName)" }
+        if ($cover -and $metaflac) {
+            $hasPic = [bool](& $metaflac --list --block-type=PICTURE $f.FullName |
+                Where-Object { $_ -match 'METADATA block' })
+            if ($hasPic) {
+                try {
+                    Invoke-Checked $metaflac @('--dont-use-padding', '--preserve-modtime',
+                        '--remove', '--block-type=PICTURE', $f.FullName)
+                    $strippedNow = $true; $picsStripped++
+                }
+                catch {
+                    Write-Warning "Could not remove embedded art from: $($f.FullName) -- $($_.Exception.Message)"
+                }
             }
         }
 
@@ -299,20 +310,18 @@ try {
             }
             else {
                 try {
-                    $commentArgs = @(Get-OpusCommentArgs "$($f.FullName)")
-                    $encArgs     = @('--quiet', "--bitrate=$OpusBitrate")
-                    if ($script:metaflac) {
-                        # don't copy the FLAC's tags wholesale...
+                    $encArgs = @('--quiet', "--bitrate=$OpusBitrate")
+                    if ($tagFilter) {
+                        # don't copy the FLAC's tags wholesale; re-add only the
+                        # allowed ones
                         $encArgs += '--discard-comments'
-                        # ...only the allowed ones, re-added explicitly
-                        $encArgs += $commentArgs
+                        $encArgs += @(New-OpusTagArgs $f.FullName)
                     }
                     if ($cover) {
-                        $encArgs += @('--discard-pictures', '--picture', "$cover")
+                        $encArgs += @('--discard-pictures', '--picture', $cover)
                         $coversUsed++
                     }
-                    & $opusenc @encArgs "$($f.FullName)" "$opus"
-                    if ($LASTEXITCODE -ne 0) { throw "opusenc.exe exited with code $LASTEXITCODE" }
+                    Invoke-Checked $opusenc ($encArgs + @($f.FullName, $opus))
                     $opusMade++
                 }
                 catch {
@@ -325,7 +334,7 @@ try {
     }
 }
 finally {
-    foreach ($t in $script:tempCovers) { Remove-Item -LiteralPath $t -Force -ErrorAction SilentlyContinue }
+    foreach ($t in $tempCovers) { Remove-Item -LiteralPath $t -Force -ErrorAction SilentlyContinue }
     Write-Progress -Activity 'Converting music library' -Completed
 }
 
