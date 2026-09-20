@@ -273,9 +273,9 @@ try {
             }
             else {
                 try {
-                    $commentArgs = Get-OpusCommentArgs "$($f.FullName)"
+                    $commentArgs = @(Get-OpusCommentArgs "$($f.FullName)")
                     $encArgs     = @('--quiet', "--bitrate=$OpusBitrate")
-                    if ($commentArgs -is [array]) {
+                    if ($script:metaflac) {
                         # don't copy the FLAC's tags wholesale...
                         $encArgs += '--discard-comments'
                         # ...only the allowed ones, re-added explicitly
