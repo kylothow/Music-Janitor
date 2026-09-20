@@ -7,8 +7,8 @@
     1) Lossless FLAC -> FLAC re-encode at maximum preset (-8) with --verify.
        flac writes a temp file, verifies it, and only then replaces the
        original. Tags, embedded art and cue sheets carry over automatically.
-       Files already encoded by the installed flac version are skipped
-       (vendor-string check).
+       Files already encoded by the installed flac version are skipped (requires
+       metaflac.exe).
     2) Cover art: if a folder contains a recognized folder image
        (cover/folder/front/album + .jpg/.jpeg/.png), it is resized to
        -CoverMaxDim px and saved as a JPEG at -CoverJpegQuality. The embedded
@@ -204,7 +204,9 @@ function Get-FolderCover([string]$Dir) {
 
 function New-OpusTagArgs([string]$FlacPath) {
     # emits '--comment','TAG=value' argument pairs for the allowed tags. The
-    # output may legitimately be empty; the caller wraps it with @().
+    # output may legitimately be empty; the caller wraps it with @(). Caveat:
+    # values containing newlines would be split by this line-based parser;
+    # irrelevant for the short single-line tags kept here.
     if (-not $metaflac) { return }
     $lines = (& $metaflac --export-tags-to=- $FlacPath) | Where-Object { $_ -and $_.IndexOf('=') -gt 0 }
     $vals  = @{}
