@@ -206,7 +206,7 @@ try {
 
         # ---------- 1) lossless FLAC -> FLAC re-encode ----------
         $needReencode = -not $NoReencode
-        if ($needReencode -and -not $Force -and $script:metaflac) {
+        if ($needReencode -and -not $Force -and $script:metaflac -and $flacVersion) {
             $vendor = (& $script:metaflac --list --block-type=VORBIS_COMMENT "$($f.FullName)") |
                 Where-Object { $_ -match 'vendor string:' } | Select-Object -First 1
             if ("$vendor" -match ("libFLAC " + [regex]::Escape($flacVersion) + "(\s|$)")) {
