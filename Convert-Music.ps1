@@ -20,6 +20,32 @@
        TRACKNUMBER, DISCNUMBER (YEAR/TRACK/DISC are remapped to
        DATE/TRACKNUMBER/DISCNUMBER).
     Existing .opus files newer than their .flac are skipped unless -Force.
+.PARAMETER Path
+    Folder that contains the FLAC library; scanned recursively.
+.PARAMETER OpusBitrate
+    Opus VBR target in kbit/s (24-512). The default 128 is transparent for
+    stereo music.
+.PARAMETER CoverMaxDim
+    Maximum width and height in pixels (64-4000) of the cover art embedded in
+    the .opus files; images are never upscaled.
+.PARAMETER CoverJpegQuality
+    JPEG quality (50-100) for the embedded cover art.
+.PARAMETER FlacExe
+    Full path to flac.exe when it is not on PATH.
+.PARAMETER OpusencExe
+    Full path to opusenc.exe when it is not on PATH.
+.PARAMETER OpusRoot
+    Mirror .opus files into this tree instead of writing them next to the FLAC
+    files.
+.PARAMETER NoReencode
+    Skip the FLAC -> FLAC re-encode and only build or refresh .opus files.
+.PARAMETER NoOpus
+    Skip Opus creation and perform FLAC maintenance only.
+.PARAMETER Force
+    Redo everything, even if already up to date.
+.NOTES
+    Assumes one album per folder: a single folder image is applied to all FLACs
+    in it.
 .EXAMPLE
     .\Convert-Music.ps1 -Path "D:\Music"
     .\Convert-Music.ps1 -Path "D:\Music" -NoReencode -Force
