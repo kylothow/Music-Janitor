@@ -212,6 +212,8 @@ function New-OpusTagArgs([string]$FlacPath) {
     # local-charset conversion of them (the script decodes output as UTF-8).
     $lines = (& $metaflac --no-utf8-convert --export-tags-to=- $FlacPath) |
         Where-Object { $_ -and $_.IndexOf('=') -gt 0 }
+    # fail loudly instead of silently building a tagless .opus
+    if ($LASTEXITCODE -ne 0) { throw "metaflac tag export failed (exit code $LASTEXITCODE)" }
     $vals = @{}
     foreach ($l in $lines) {
         $i = $l.IndexOf('='); $n = $l.Substring(0, $i).Trim().ToUpperInvariant()
