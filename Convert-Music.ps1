@@ -98,7 +98,8 @@ function Resolve-Tool([string]$Name, [string]$ExplicitPath) {
     }
     $cmd = Get-Command $Name -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
-    throw "$Name not found on PATH. Install it, or pass -$($Name)Exe with the full path."
+    $paramName = '-' + $Name.Substring(0, 1).ToUpperInvariant() + $Name.Substring(1) + 'Exe'
+    throw "$Name not found on PATH. Install it, or pass $paramName with the full path."
 }
 
 function Invoke-Checked([string]$ExePath, [string[]]$Arguments) {
