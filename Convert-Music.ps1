@@ -235,7 +235,10 @@ if ("$flacVerLine" -match 'flac\s+([\d.]+)') { $flacVersion = $Matches[1].Trim('
 $threadArgs = @()
 try { if ([version]$flacVersion -ge [version]'1.5.0') { $threadArgs = @("--threads=$([Environment]::ProcessorCount)") } } catch { }
 
-$root  = (Resolve-Path -LiteralPath $Path).Path.TrimEnd('\')
+$root  = (Resolve-Path -LiteralPath $Path).Path
+# keep a drive root as 'C:\': trimming it to 'C:' would make Get-ChildItem
+# follow the session's per-drive current directory instead of the root
+if ($root.Length -gt 3) { $root = $root.TrimEnd('\') }
 # -ErrorAction SilentlyContinue: an unreadable subfolder is skipped, not fatal
 $files = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter *.flac -Force -ErrorAction SilentlyContinue)
 if ($files.Count -eq 0) { Write-Host "No FLAC files found under '$root'."; return }
