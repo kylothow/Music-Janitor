@@ -157,6 +157,8 @@ function Convert-CoverArt([string]$Source, [string]$Destination, [int]$MaxDim, [
         try {
             $g = [System.Drawing.Graphics]::FromImage($bmp)
             try {
+                # transparent PNGs would otherwise turn black in the JPEG
+                $g.Clear([System.Drawing.Color]::White)
                 $g.InterpolationMode  = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
                 $g.SmoothingMode      = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
                 $g.PixelOffsetMode    = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
