@@ -388,5 +388,5 @@ finally {
 
 $mb = [math]::Round($bytesSaved / 1MB, 1)
 Write-Host ""
-Write-Host ("Done. FLAC re-encoded: {0} ({1} MB saved), already current: {2} | embedded art removed from {3} files, {4} covers used | Opus created: {5}, up to date: {6} | failures: {7}" -f `
+Write-Host ("Done. FLAC re-encoded: {0} (net {1} MB), already current: {2} | embedded art removed from {3} files, {4} covers used | Opus created: {5}, up to date: {6} | failures: {7}" -f `
     $reencoded, $mb, $flacSkipped, $picsStripped, $coversUsed, $opusMade, $opusSkipped, $failed)
