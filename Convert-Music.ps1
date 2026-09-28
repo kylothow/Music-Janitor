@@ -207,8 +207,11 @@ function New-OpusTagArgs([string]$FlacPath) {
     # values containing newlines would be split by this line-based parser;
     # irrelevant for the short single-line tags kept here.
     if (-not $metaflac) { return }
-    $lines = (& $metaflac --export-tags-to=- $FlacPath) | Where-Object { $_ -and $_.IndexOf('=') -gt 0 }
-    $vals  = @{}
+    # --no-utf8-convert: metaflac must hand us the stored bytes, not a
+    # local-charset conversion of them (the script decodes output as UTF-8).
+    $lines = (& $metaflac --no-utf8-convert --export-tags-to=- $FlacPath) |
+        Where-Object { $_ -and $_.IndexOf('=') -gt 0 }
+    $vals = @{}
     foreach ($l in $lines) {
         $i = $l.IndexOf('='); $n = $l.Substring(0, $i).Trim().ToUpperInvariant()
         if (-not $vals.ContainsKey($n)) { $vals[$n] = New-Object System.Collections.Generic.List[string] }
@@ -240,6 +243,20 @@ Write-Host "Found $($files.Count) FLAC file(s). flac v$flacVersion, Opus target 
 $reencoded    = 0; $flacSkipped = 0; $opusMade = 0; $opusSkipped = 0; $failed = 0
 $picsStripped = 0; $coversUsed = 0
 $bytesSaved   = [long]0
+
+# metaflac writes tag output as UTF-8, but PS 5.1 decodes native command output
+# using the console code page (OEM by default), which mangles non-ASCII tags on
+# their way into the .opus comments. Decode as UTF-8 for this run instead;
+# restored in the finally block below.
+$origOutputEncoding = $null
+try {
+    if ([Console]::OutputEncoding.CodePage -ne [System.Text.Encoding]::UTF8.CodePage) {
+        $origOutputEncoding = [Console]::OutputEncoding
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    }
+} catch {
+    Write-Warning "Could not switch the console to UTF-8 (non-ASCII tags may be mangled): $($_.Exception.Message)"
+}
 
 try {
     for ($i = 0; $i -lt $files.Count; $i++) {
@@ -342,6 +359,9 @@ try {
 }
 finally {
     foreach ($t in $tempCovers) { Remove-Item -LiteralPath $t -Force -ErrorAction SilentlyContinue }
+    if ($origOutputEncoding) {
+        try { [Console]::OutputEncoding = $origOutputEncoding } catch { }
+    }
     Write-Progress -Activity 'Converting music library' -Completed
 }
 
