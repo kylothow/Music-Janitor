@@ -327,8 +327,13 @@ try {
                 Where-Object { $_ -match 'METADATA block' })
             if ($hasPic) {
                 try {
+                    # metaflac's --preserve-modtime only keeps whole seconds;
+                    # capture and restore the exact timestamp ourselves
+                    $flacObj = Get-Item -LiteralPath $f.FullName
+                    $mtime   = $flacObj.LastWriteTimeUtc
                     Invoke-Checked $metaflac @('--dont-use-padding', '--preserve-modtime',
                         '--remove', '--block-type=PICTURE', $f.FullName)
+                    $flacObj.LastWriteTimeUtc = $mtime
                     $strippedNow = $true; $picsStripped++
                 }
                 catch {
