@@ -362,12 +362,26 @@ try {
             }
             else {
                 try {
-                    $encArgs = @('--quiet', "--bitrate=$OpusBitrate")
+                    $encArgs     = @('--quiet', "--bitrate=$OpusBitrate")
+                    $embeddedPic = $null
                     if ($tagFilter) {
                         # don't copy the FLAC's tags wholesale; re-add only the
                         # allowed ones
                         $encArgs += '--discard-comments'
                         $encArgs += @(New-OpusTagArgs $f.FullName)
+                        if (-not $cover) {
+                            # --discard-comments also drops the FLAC's embedded
+                            # picture (opus stores it as a comment); re-embed it
+                            # explicitly so folders without a folder image keep
+                            # their art
+                            $hasEmbedded = [bool](& $metaflac --list --block-type=PICTURE $f.FullName |
+                                Where-Object { $_ -match 'METADATA block' })
+                            if ($hasEmbedded) {
+                                $embeddedPic = Join-Path ([System.IO.Path]::GetTempPath()) ("opusart-" + [guid]::NewGuid().ToString('N'))
+                                Invoke-Checked $metaflac @("--export-picture-to=$embeddedPic", $f.FullName)
+                                $encArgs += @('--discard-pictures', '--picture', $embeddedPic)
+                            }
+                        }
                     }
                     if ($cover) {
                         $encArgs += @('--discard-pictures', '--picture', $cover)
@@ -380,6 +394,9 @@ try {
                     $failed++
                     Remove-Item -LiteralPath $opus -Force -ErrorAction SilentlyContinue
                     Write-Warning "Opus encode FAILED: $($f.FullName) -- $($_.Exception.Message)"
+                }
+                finally {
+                    if ($embeddedPic) { Remove-Item -LiteralPath $embeddedPic -Force -ErrorAction SilentlyContinue }
                 }
             }
         }
