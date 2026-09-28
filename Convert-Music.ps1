@@ -175,9 +175,11 @@ function Convert-CoverArt([string]$Source, [string]$Destination, [int]$MaxDim, [
     } finally { $img.Dispose() }
 }
 
-function Get-FolderCover([string]$Dir) {
+function Get-FolderCover([string]$Dir, [switch]$NoOpus, [int]$CoverMaxDim, [int]$CoverJpegQuality) {
     # returns the path of a resized cover JPEG for this folder (cached), or
-    # $null
+    # $null. Under -NoOpus the resized JPEG would never be embedded, so only the
+    # source path is returned, after confirming the image loads; callers use it
+    # solely to decide whether the embedded art may be stripped.
     if ($folderCoverCache.ContainsKey($Dir)) { return $folderCoverCache[$Dir] }
     $jpg = $null
     if ($drawingOk) {
@@ -187,14 +189,27 @@ function Get-FolderCover([string]$Dir) {
             if (Test-Path -LiteralPath $p -PathType Leaf) { $src = $p; break }
         }
         if ($src) {
-            try {
-                $jpg = Join-Path ([System.IO.Path]::GetTempPath()) ("opuscover-" + [guid]::NewGuid().ToString('N') + ".jpg")
-                Convert-CoverArt -Source $src -Destination $jpg -MaxDim $CoverMaxDim -JpegQuality $CoverJpegQuality
-                [void]$tempCovers.Add($jpg)
-            } catch {
-                Write-Warning "Cover '$src' could not be processed ($($_.Exception.Message)) - keeping embedded art for: $Dir"
-                if ($jpg -and (Test-Path -LiteralPath $jpg)) { Remove-Item -LiteralPath $jpg -Force -ErrorAction SilentlyContinue }
-                $jpg = $null
+            if ($NoOpus) {
+                try {
+                    $probe = [System.Drawing.Image]::FromFile($src)
+                    $probe.Dispose()
+                    $jpg = $src
+                }
+                catch {
+                    Write-Warning "Cover '$src' could not be loaded ($($_.Exception.Message)) - keeping embedded art for: $Dir"
+                }
+            }
+            else {
+                try {
+                    $jpg = Join-Path ([System.IO.Path]::GetTempPath()) ("opuscover-" + [guid]::NewGuid().ToString('N') + ".jpg")
+                    Convert-CoverArt -Source $src -Destination $jpg -MaxDim $CoverMaxDim -JpegQuality $CoverJpegQuality
+                    [void]$tempCovers.Add($jpg)
+                }
+                catch {
+                    Write-Warning "Cover '$src' could not be processed ($($_.Exception.Message)) - keeping embedded art for: $Dir"
+                    if ($jpg -and (Test-Path -LiteralPath $jpg)) { Remove-Item -LiteralPath $jpg -Force -ErrorAction SilentlyContinue }
+                    $jpg = $null
+                }
             }
         }
     }
@@ -303,7 +318,7 @@ try {
         }
 
         # ---------- 2) strip embedded art from the FLAC ----------
-        $cover       = Get-FolderCover $f.DirectoryName
+        $cover       = Get-FolderCover -Dir $f.DirectoryName -NoOpus $NoOpus -CoverMaxDim $CoverMaxDim -CoverJpegQuality $CoverJpegQuality
         $strippedNow = $false
         if ($cover -and $metaflac) {
             $hasPic = [bool](& $metaflac --list --block-type=PICTURE $f.FullName |
