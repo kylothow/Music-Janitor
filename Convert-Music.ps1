@@ -15,10 +15,10 @@
        picture is then REMOVED from the FLAC files (the folder image stays as
        the lossless master), and the resized JPEG is embedded into the .opus
        files instead.
-    3) FLAC -> Opus at -OpusBitrate kbit/s VBR. Only the tags the target player
-       supports are carried over: TITLE, ALBUM, ARTIST, GENRE, DATE,
-       TRACKNUMBER, DISCNUMBER (YEAR/TRACK/DISC are remapped to
-       DATE/TRACKNUMBER/DISCNUMBER).
+    3) FLAC -> Opus at -OpusBitrate kbit/s VBR. A fixed allowlist of Vorbis
+       comments is kept (see $KeepTags below); common synonyms are remapped to
+       the canonical name when the latter is absent, and all other tags are
+       dropped.
     Existing .opus files newer than their .flac are skipped unless -Force.
 .PARAMETER Path
     Folder that contains the FLAC library; scanned recursively.
@@ -82,9 +82,21 @@ if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
 }
 
 # tags kept in the .opus files (all others are stripped)
-$KeepTags    = @('TITLE', 'ALBUM', 'ARTIST', 'GENRE', 'DATE', 'TRACKNUMBER', 'DISCNUMBER')
-# used only if the canonical tag is absent
-$TagSynonyms = @{ DATE = 'YEAR'; TRACKNUMBER = 'TRACK'; DISCNUMBER = 'DISC' }
+$KeepTags    = @(
+    'TITLE', 'ALBUM', 'ARTIST', 'ALBUMARTIST', 'GENRE', 'DATE',
+    'TRACKNUMBER', 'DISCNUMBER', 'COPYRIGHT', 'ISRC', 'LABEL',
+    'TOTALDISCS', 'TOTALTRACKS', 'UPC'
+)
+$TagSynonyms = @{
+    DATE         = 'YEAR'
+    TRACKNUMBER  = 'TRACK'
+    DISCNUMBER   = 'DISC'
+    ALBUMARTIST  = 'ALBUM_ARTIST'
+    TOTALDISCS   = 'TOTALDISC', 'TOTAL_DISCS'
+    TOTALTRACKS  = 'TOTALTRACK', 'TOTAL_TRACKS'
+    UPC          = 'BARCODE', 'EAN'
+    LABEL        = 'ORGANIZATION'
+}
 
 # folder image file names recognized in each folder, in priority order
 $CoverNames = @('cover.jpg', 'cover.jpeg', 'folder.jpg', 'folder.jpeg',
@@ -238,11 +250,10 @@ function New-OpusTagArgs([string]$FlacPath) {
         $vals[$n].Add($l.Substring($i + 1))
     }
     foreach ($t in $KeepTags) {
-        $src = $t
-        if (-not $vals.ContainsKey($t)) {
-            $syn = $TagSynonyms[$t]
-            if ($syn -and $vals.ContainsKey($syn)) { $src = $syn } else { continue }
-        }
+        # the canonical tag plus its synonyms in order; the first one present
+        # wins, and missing tags are skipped
+        $src = @($t) + @($TagSynonyms[$t]) | Where-Object { $_ -and $vals.ContainsKey($_) } | Select-Object -First 1
+        if (-not $src) { continue }
         foreach ($v in $vals[$src]) { '--comment', "$t=$v" }
     }
 }
