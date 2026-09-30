@@ -496,3 +496,6 @@ Write-Host ("  Failures  : {0}" -f $failed) -ForegroundColor $headlineColor
 if ($failedFiles.Count -gt 0) {
     foreach ($ff in $failedFiles) { Write-Host "    $ff" -ForegroundColor Red }
 }
+
+# non-zero exit code so failures surface to callers and scheduled tasks
+if ($failed -gt 0) { exit 1 }

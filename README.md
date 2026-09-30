@@ -51,4 +51,5 @@ powershell -ExecutionPolicy Bypass -File .\Convert-Music.ps1 -Path "D:\Music"
 ## Notes
 
 - The console output encoding is switched to UTF-8 for the run (and restored afterwards) so non-ASCII tags survive into the `.opus` files on any console.
+- The script exits with code 1 when any file failed (0 on a clean run), which makes failures visible to scheduled tasks and other callers.
 - Paths longer than 260 characters are not supported.
