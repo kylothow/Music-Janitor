@@ -281,7 +281,7 @@ if ($files.Count -eq 0) { Write-Host "No FLAC files found under '$root'."; retur
 Write-Host "Found $($files.Count) FLAC file(s). flac v$flacVersion, Opus target ${OpusBitrate}k, cover ${CoverMaxDim}px/q$CoverJpegQuality."
 
 $reencoded    = 0; $flacSkipped = 0; $opusMade = 0; $opusSkipped = 0; $failed = 0
-$picsStripped = 0; $coversUsed = 0
+$picsStripped = 0
 $bytesSaved   = [long]0
 # size totals for files with an Opus after this run (made or up to date)
 $flacBytesTotal = [long]0
@@ -412,7 +412,6 @@ try {
                     }
                     if ($cover) {
                         $encArgs += @('--discard-pictures', '--picture', $cover)
-                        $coversUsed++
                     }
                     Invoke-Checked $opusenc ($encArgs + @($f.FullName, $opus))
                     $opusMade++
@@ -442,14 +441,16 @@ finally {
 
 $mb            = [Math]::Round($bytesSaved / 1MB, 1)
 $headlineColor = if ($failed -gt 0) { 'Red' } else { 'Green' }
+$folderCount   = $folderCoverCache.Keys.Count  # one cache entry per FLAC folder
+$folderCovers  = @($folderCoverCache.Values | Where-Object { $_ }).Count
 Write-Host ''
-Write-Host ("Done. {0} FLAC file(s) processed." -f $files.Count) -ForegroundColor $headlineColor
+Write-Host ("Done. {0} FLAC file(s) in {1} folder(s) processed." -f $files.Count, $folderCount) -ForegroundColor $headlineColor
 if ($NoReencode) {
     Write-Host '  Re-encode : (disabled)'
 } else {
     Write-Host ("  Re-encode : {0} re-encoded (net {1} MB), {2} already current" -f $reencoded, $mb, $flacSkipped)
 }
-Write-Host ("  Cover art : embedded art removed from {0} files; {1} covers used in Opus files" -f $picsStripped, $coversUsed)
+Write-Host ("  Cover art : {0} of {1} folder(s) had an image; embedded art removed from {2} files" -f $folderCovers, $folderCount, $picsStripped)
 if ($NoOpus) {
     Write-Host '  Opus      : (disabled)'
 } else {
