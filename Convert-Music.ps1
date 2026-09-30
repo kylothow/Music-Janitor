@@ -427,7 +427,19 @@ finally {
     Write-Progress -Activity 'Converting music library' -Completed
 }
 
-$mb = [math]::Round($bytesSaved / 1MB, 1)
+$mb            = [math]::Round($bytesSaved / 1MB, 1)
+$headlineColor = if ($failed -gt 0) { 'Red' } else { 'Green' }
 Write-Host ""
-Write-Host ("Done. FLAC re-encoded: {0} (net {1} MB), already current: {2} | embedded art removed from {3} files, {4} covers used | Opus created: {5}, up to date: {6} | failures: {7}" -f `
-    $reencoded, $mb, $flacSkipped, $picsStripped, $coversUsed, $opusMade, $opusSkipped, $failed)
+Write-Host ("Done. {0} FLAC file(s) processed." -f $files.Count) -ForegroundColor $headlineColor
+if ($NoReencode) {
+    Write-Host '  Re-encode : (disabled)'
+} else {
+    Write-Host ("  Re-encode : {0} re-encoded (net {1} MB), {2} already current" -f $reencoded, $mb, $flacSkipped)
+}
+Write-Host ("  Cover art : embedded art removed from {0} files; {1} covers used in Opus files" -f $picsStripped, $coversUsed)
+if ($NoOpus) {
+    Write-Host '  Opus      : (disabled)'
+} else {
+    Write-Host ("  Opus      : {0} created, {1} up to date" -f $opusMade, $opusSkipped)
+}
+Write-Host ("  Failures  : {0}" -f $failed) -ForegroundColor $headlineColor
