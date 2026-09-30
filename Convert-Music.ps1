@@ -258,6 +258,12 @@ function New-OpusTagArgs([string]$FlacPath) {
     }
 }
 
+function Format-Bytes([long]$Bytes) {
+    if ($Bytes -ge 1GB) { '{0:N2} GB' -f ($Bytes / 1GB) }
+    elseif ($Bytes -ge 1MB) { '{0:N1} MB' -f ($Bytes / 1MB) }
+    else { '{0:N0} KB' -f ($Bytes / 1KB) }
+}
+
 # installed flac version, e.g. "1.5.0"
 $flacVersion = ''
 $flacVerLine = (& $flac --version) | Select-Object -First 1
@@ -277,6 +283,9 @@ Write-Host "Found $($files.Count) FLAC file(s). flac v$flacVersion, Opus target 
 $reencoded    = 0; $flacSkipped = 0; $opusMade = 0; $opusSkipped = 0; $failed = 0
 $picsStripped = 0; $coversUsed = 0
 $bytesSaved   = [long]0
+# size totals for files with an Opus after this run (made or up to date)
+$flacBytesTotal = [long]0
+$opusBytesTotal = [long]0
 # path + failing phase, for the summary
 $failedFiles = New-Object System.Collections.Generic.List[string]
 
@@ -373,6 +382,8 @@ try {
                 ((Get-Item -LiteralPath $opus).LastWriteTimeUtc -gt $flacNow.LastWriteTimeUtc)
             if ($upToDate) {
                 $opusSkipped++
+                $flacBytesTotal += $flacNow.Length
+                $opusBytesTotal += (Get-Item -LiteralPath $opus).Length
             }
             else {
                 try {
@@ -405,6 +416,8 @@ try {
                     }
                     Invoke-Checked $opusenc ($encArgs + @($f.FullName, $opus))
                     $opusMade++
+                    $flacBytesTotal += $flacNow.Length
+                    $opusBytesTotal += (Get-Item -LiteralPath $opus).Length
                 }
                 catch {
                     $failed++
@@ -441,6 +454,11 @@ if ($NoOpus) {
     Write-Host '  Opus      : (disabled)'
 } else {
     Write-Host ("  Opus      : {0} created, {1} up to date" -f $opusMade, $opusSkipped)
+    if ($opusBytesTotal -gt 0) {
+        $pctSmaller = [int][Math]::Round(100 * (1.0 - $opusBytesTotal / [double]$flacBytesTotal))
+        Write-Host ("  Size      : {0} FLAC -> {1} Opus ({2}% smaller)" -f `
+            (Format-Bytes $flacBytesTotal), (Format-Bytes $opusBytesTotal), $pctSmaller)
+    }
 }
 Write-Host ("  Failures  : {0}" -f $failed) -ForegroundColor $headlineColor
 if ($failedFiles.Count -gt 0) {
