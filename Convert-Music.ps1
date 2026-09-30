@@ -323,10 +323,18 @@ try {
 }
 
 try {
+    # Write-Progress is throttled to 1% increments (slow on large libraries)
+    $lastPct = -1
     for ($i = 0; $i -lt $files.Count; $i++) {
-        $f = $files[$i]
-        Write-Progress -Activity 'Converting music library' -Status $f.FullName `
-            -PercentComplete ([int](100 * ($i + 1) / $files.Count))
+        $f   = $files[$i]
+        $pct = [int](100 * $i / $files.Count)
+        if ($pct -ne $lastPct) {
+            $lastPct = $pct
+            # empty for files directly in the root
+            $relDir = $f.DirectoryName.Substring($root.Length).TrimStart('\')
+            Write-Progress -Activity 'Converting music library' -Status ("{0}/{1}  {2}" -f ($i + 1), $files.Count, $relDir) `
+                -CurrentOperation $f.Name -PercentComplete $pct
+        }
 
         # ---------- 1) lossless FLAC -> FLAC re-encode ----------
         $needReencode = -not $NoReencode
