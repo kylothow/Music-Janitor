@@ -283,6 +283,8 @@ Write-Host "Found $($files.Count) FLAC file(s). flac v$flacVersion, Opus target 
 $reencoded    = 0; $flacSkipped = 0; $opusMade = 0; $opusSkipped = 0; $failed = 0
 $picsStripped = 0; $coversUsed = 0
 $bytesSaved   = [long]0
+# path + failing phase, for the summary
+$failedFiles = New-Object System.Collections.Generic.List[string]
 
 # metaflac writes tag output as UTF-8, but PS 5.1 decodes native command output
 # using the console code page (OEM by default), which mangles non-ASCII tags on
@@ -331,6 +333,7 @@ try {
             }
             catch {
                 $failed++
+                [void]$failedFiles.Add("$($f.FullName) [re-encode]")
                 Write-Warning "FLAC re-encode FAILED (original left untouched): $($f.FullName) -- $($_.Exception.Message)"
                 continue
             }
@@ -409,6 +412,7 @@ try {
                 }
                 catch {
                     $failed++
+                    [void]$failedFiles.Add("$($f.FullName) [opus]")
                     Remove-Item -LiteralPath $opus -Force -ErrorAction SilentlyContinue
                     Write-Warning "Opus encode FAILED: $($f.FullName) -- $($_.Exception.Message)"
                 }
@@ -443,3 +447,6 @@ if ($NoOpus) {
     Write-Host ("  Opus      : {0} created, {1} up to date" -f $opusMade, $opusSkipped)
 }
 Write-Host ("  Failures  : {0}" -f $failed) -ForegroundColor $headlineColor
+if ($failedFiles.Count -gt 0) {
+    foreach ($ff in $failedFiles) { Write-Host "    $ff" -ForegroundColor Red }
+}
