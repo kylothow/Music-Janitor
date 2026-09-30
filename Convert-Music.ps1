@@ -277,6 +277,13 @@ if ("$verLine" -match 'flac\s+([\d.]+)') { $flacVersion = $Matches[1].Trim('.') 
 $threadArgs = @()
 try { if ([version]$flacVersion -ge [version]'1.5.0') { $threadArgs = @("--threads=$([Environment]::ProcessorCount)") } } catch { }
 
+# opusenc version, e.g. "0.2-52-g5f894e9" (opus-tools); informational only
+$opusencVersion = ''
+$ovLine         = (& $opusenc --version) | Select-Object -First 1
+if ("$ovLine" -match 'opus-tools\s+(\S+)') { $opusencVersion = $Matches[1] }
+elseif ("$ovLine" -match '([\d.]+)') { $opusencVersion = $Matches[1] }
+if (-not $opusencVersion) { $opusencVersion = '(unknown)' }
+
 $root  = (Resolve-Path -LiteralPath $Path).Path
 # keep a drive root as 'C:\': trimming it to 'C:' would make Get-ChildItem
 # follow the session's per-drive current directory instead of the root
@@ -284,7 +291,19 @@ if ($root.Length -gt 3) { $root = $root.TrimEnd('\') }
 # -ErrorAction SilentlyContinue: an unreadable subfolder is skipped, not fatal
 $files = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter *.flac -Force -ErrorAction SilentlyContinue)
 if ($files.Count -eq 0) { Write-Host "No FLAC files found under '$root'."; return }
-Write-Host "Found $($files.Count) FLAC file(s). flac v$flacVersion, Opus target ${OpusBitrate}k, cover ${CoverMaxDim}px/q$CoverJpegQuality."
+
+$folderCount = @($files | Group-Object DirectoryName).Count
+$metaInfo    = if ($metaflac) { 'yes' } else { 'NOT FOUND (tag filtering and art stripping disabled)' }
+$mode        = @(
+    if ($NoReencode) { 're-encode off' } else { 're-encode on' }
+    if ($NoOpus) { 'opus off' } else { "opus on (${OpusBitrate}k VBR)" }
+    "covers ${CoverMaxDim}px/q$CoverJpegQuality"
+    if ($Force) { 'force rebuilds' }
+    if ($OpusRoot) { "opus root: $OpusRoot" }
+) -join '; '
+Write-Host "Catalog : $root -- $($files.Count) FLAC file(s) in $folderCount folder(s)"
+Write-Host "Tools   : flac $flacVersion, metaflac $metaInfo, opusenc $opusencVersion"
+Write-Host "Mode    : $mode"
 
 $reencoded    = 0; $flacSkipped = 0; $opusMade = 0; $opusSkipped = 0; $failed = 0
 $picsStripped = 0
@@ -445,8 +464,8 @@ finally {
 
 $mb            = [math]::Round($bytesSaved / 1MB, 1)
 $headlineColor = if ($failed -gt 0) { 'Red' } else { 'Green' }
-$folderCount   = $folderCoverCache.Keys.Count  # one cache entry per FLAC folder
-$folderCovers  = @($folderCoverCache.Values | Where-Object { $_ }).Count
+# cache has one entry per FLAC folder
+$folderCovers = @($folderCoverCache.Values | Where-Object { $_ }).Count
 Write-Host ""
 Write-Host ("Done. {0} FLAC file(s) in {1} folder(s) processed." -f $files.Count, $folderCount) -ForegroundColor $headlineColor
 if ($NoReencode) {
