@@ -14,7 +14,8 @@
        -CoverMaxDim px and saved as a JPEG at -CoverJpegQuality. The embedded
        picture is then REMOVED from the FLAC files (the folder image stays as
        the lossless master), and the resized JPEG is embedded into the .opus
-       files instead.
+       files instead. Folders without a recognized image keep their embedded
+       art, which is resized the same way into the .opus files.
     3) FLAC -> Opus at -OpusBitrate kbit/s VBR. A fixed allowlist of Vorbis
        comments is kept (see $KeepTags below); common synonyms are remapped to
        the canonical name when the latter is absent, and all other tags are
@@ -433,6 +434,19 @@ try {
                             if ($hasEmbedded) {
                                 $embeddedPic = Join-Path ([System.IO.Path]::GetTempPath()) ("opusart-" + [guid]::NewGuid().ToString('N'))
                                 Invoke-Checked $metaflac @("--export-picture-to=$embeddedPic", $f.FullName)
+                                # normalize like a folder image (max dimension,
+                                # JPEG quality); if the image cannot be
+                                # processed, embed the original bytes
+                                $resized = Join-Path ([System.IO.Path]::GetTempPath()) ("opusart-" + [guid]::NewGuid().ToString('N') + ".jpg")
+                                try {
+                                    Convert-CoverArt -Source $embeddedPic -Destination $resized -MaxDim $CoverMaxDim -JpegQuality $CoverJpegQuality
+                                    Remove-Item -LiteralPath $embeddedPic -Force -ErrorAction SilentlyContinue
+                                    $embeddedPic = $resized
+                                }
+                                catch {
+                                    Write-Warning "Embedded art of $($f.FullName) could not be resized ($($_.Exception.Message)) -- embedding the original"
+                                    Remove-Item -LiteralPath $resized -Force -ErrorAction SilentlyContinue
+                                }
                                 $encArgs += @('--discard-pictures', '--picture', $embeddedPic)
                             }
                         }
