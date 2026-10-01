@@ -227,7 +227,9 @@ function Get-FolderCover([string]$Dir, [switch]$NoOpus, [int]$CoverMaxDim, [int]
         }
         $folderCoverMtime[$Dir] = $null
         if ($src) {
-            $folderCoverMtime[$Dir] = (Get-Item -LiteralPath $src).LastWriteTimeUtc
+            # a cover vanishing mid-run (or a flaky share) must not abort the
+            # batch
+            try { $folderCoverMtime[$Dir] = (Get-Item -LiteralPath $src).LastWriteTimeUtc } catch { }
             if ($NoOpus) {
                 try {
                     $probe = [System.Drawing.Image]::FromFile($src)
@@ -440,7 +442,10 @@ try {
 
             $flacNow    = Get-Item -LiteralPath $f.FullName
             $coverMtime = $folderCoverMtime[$f.DirectoryName]
-            $opusNow    = if (Test-Path -LiteralPath $opus) { Get-Item -LiteralPath $opus }
+            # treat a vanished opus (or flaky share) as not up to date rather
+            # than aborting
+            $opusNow    = $null
+            try { $opusNow = Get-Item -LiteralPath $opus } catch { }
             # up to date only when newer than both the FLAC and, when present,
             # the folder image
             $upToDate = -not $Force -and -not $strippedNow -and $opusNow -and
@@ -449,7 +454,7 @@ try {
             if ($upToDate) {
                 $opusSkipped++
                 $flacBytesTotal += $flacNow.Length
-                $opusBytesTotal += (Get-Item -LiteralPath $opus).Length
+                $opusBytesTotal += $opusNow.Length
             }
             else {
                 # encode via a sibling temp file: an interrupted or failed build
