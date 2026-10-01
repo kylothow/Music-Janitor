@@ -20,7 +20,9 @@
        comments is kept (see $KeepTags below); common synonyms are remapped to
        the canonical name when the latter is absent, and all other tags are
        dropped.
-    Existing .opus files newer than their .flac are skipped unless -Force.
+    An art-strip during the current run forces that file's opus to rebuild.
+    Existing .opus files newer than both their .flac and the folder image,
+    when present, are skipped unless -Force.
 .PARAMETER Path
     Folder that contains the FLAC library; scanned recursively.
 .PARAMETER OpusBitrate
@@ -148,6 +150,7 @@ try { Add-Type -AssemblyName System.Drawing } catch {
 }
 
 $folderCoverCache = @{}  # folder -> temp .jpg path (or $null)
+$folderCoverMtime = @{}  # folder -> cover source LastWriteTimeUtc (or $null)
 $tempCovers       = New-Object System.Collections.Generic.List[string]
 
 function Convert-CoverArt([string]$Source, [string]$Destination, [int]$MaxDim, [int]$JpegQuality) {
@@ -203,7 +206,9 @@ function Get-FolderCover([string]$Dir, [switch]$NoOpus, [int]$CoverMaxDim, [int]
             $p = Join-Path $Dir $n
             if (Test-Path -LiteralPath $p -PathType Leaf) { $src = $p; break }
         }
+        $folderCoverMtime[$Dir] = $null
         if ($src) {
+            $folderCoverMtime[$Dir] = (Get-Item -LiteralPath $src).LastWriteTimeUtc
             if ($NoOpus) {
                 try {
                     $probe = [System.Drawing.Image]::FromFile($src)
@@ -405,9 +410,14 @@ try {
                 $opus = [System.IO.Path]::ChangeExtension($f.FullName, '.opus')
             }
 
-            $flacNow  = Get-Item -LiteralPath $f.FullName
-            $upToDate = -not $Force -and -not $strippedNow -and (Test-Path -LiteralPath $opus) -and
-                ((Get-Item -LiteralPath $opus).LastWriteTimeUtc -gt $flacNow.LastWriteTimeUtc)
+            $flacNow    = Get-Item -LiteralPath $f.FullName
+            $coverMtime = $folderCoverMtime[$f.DirectoryName]
+            $opusNow    = if (Test-Path -LiteralPath $opus) { Get-Item -LiteralPath $opus }
+            # up to date only when newer than both the FLAC and, when present,
+            # the folder image
+            $upToDate = -not $Force -and -not $strippedNow -and $opusNow -and
+                ($opusNow.LastWriteTimeUtc -gt $flacNow.LastWriteTimeUtc) -and
+                ((-not $coverMtime) -or ($opusNow.LastWriteTimeUtc -gt $coverMtime))
             if ($upToDate) {
                 $opusSkipped++
                 $flacBytesTotal += $flacNow.Length
