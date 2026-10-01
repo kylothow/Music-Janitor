@@ -165,15 +165,29 @@ if (-not $metaflac) {
     Write-Warning "metaflac.exe not found: embedded art will NOT be removed from FLACs, and Opus tag filtering will be skipped."
 }
 
-$drawingOk = $true
-try { Add-Type -AssemblyName System.Drawing } catch {
-    $drawingOk = $false
-    Write-Warning "Could not load System.Drawing (cover resizing unavailable): $($_.Exception.Message)"
-}
+# System.Drawing is loaded lazily on first image use (Test-DrawingLoaded):
+# libraries without covers never load it, and a load failure is only reported
+# when image processing is attempted
+$drawingOk    = $true
+$drawingTried = $false
 
 $folderCoverCache = @{}  # folder -> temp .jpg path (or $null)
 $folderCoverMtime = @{}  # folder -> cover source LastWriteTimeUtc (or $null)
 $tempCovers       = New-Object System.Collections.Generic.List[string]
+
+function Test-DrawingLoaded {
+    # load System.Drawing on first use and cache the outcome; the writes need
+    # the explicit scope qualifier because a plain assignment inside a function
+    # would create a function-local variable
+    if (-not $drawingTried) {
+        $script:drawingTried = $true
+        try { Add-Type -AssemblyName System.Drawing } catch {
+            $script:drawingOk = $false
+            Write-Warning "Could not load System.Drawing (cover resizing unavailable): $($_.Exception.Message)"
+        }
+    }
+    return $drawingOk
+}
 
 function Convert-CoverArt([string]$Source, [string]$Destination, [int]$MaxDim, [int]$JpegQuality) {
     # a JPEG stores no quality header; "already optimal" in practice means that
@@ -250,30 +264,28 @@ function Get-FolderCover([string]$Dir, [switch]$NoOpus, [int]$CoverMaxDim, [int]
     # perform no image processing.
     if ($folderCoverCache.ContainsKey($Dir)) { return $folderCoverCache[$Dir] }
     $jpg = $null
-    if ($drawingOk) {
-        $src = Find-CoverSource $Dir
-        if ($src) {
-            if ($NoOpus) {
-                try {
-                    $probe = [System.Drawing.Image]::FromFile($src)
-                    $probe.Dispose()
-                    $jpg = $src
-                }
-                catch {
-                    Write-Warning "Cover '$src' could not be loaded ($($_.Exception.Message)) - keeping embedded art for: $Dir"
-                }
+    $src = $folderCoverSrc[$Dir]  # resolved once before the loop
+    if ($src -and (Test-DrawingLoaded)) {
+        if ($NoOpus) {
+            try {
+                $probeLine = [System.Drawing.Image]::FromFile($src)
+                $probeLine.Dispose()
+                $jpg = $src
             }
-            else {
-                try {
-                    $jpg = Join-Path ([System.IO.Path]::GetTempPath()) ("opuscover-" + [guid]::NewGuid().ToString('N') + ".jpg")
-                    Convert-CoverArt -Source $src -Destination $jpg -MaxDim $CoverMaxDim -JpegQuality $CoverJpegQuality
-                    [void]$tempCovers.Add($jpg)
-                }
-                catch {
-                    Write-Warning "Cover '$src' could not be processed ($($_.Exception.Message)) - keeping embedded art for: $Dir"
-                    if ($jpg -and (Test-Path -LiteralPath $jpg)) { Remove-Item -LiteralPath $jpg -Force -ErrorAction SilentlyContinue }
-                    $jpg = $null
-                }
+            catch {
+                Write-Warning "Cover '$src' could not be loaded ($($_.Exception.Message)) -- keeping embedded art for: $Dir"
+            }
+        }
+        else {
+            try {
+                $jpg = Join-Path ([System.IO.Path]::GetTempPath()) ("opuscover-" + [guid]::NewGuid().ToString('N') + ".jpg")
+                Convert-CoverArt -Source $src -Destination $jpg -MaxDim $CoverMaxDim -JpegQuality $CoverJpegQuality
+                [void]$tempCovers.Add($jpg)
+            }
+            catch {
+                Write-Warning "Cover '$src' could not be processed ($($_.Exception.Message)) -- keeping embedded art for: $Dir"
+                if ($jpg -and (Test-Path -LiteralPath $jpg)) { Remove-Item -LiteralPath $jpg -Force -ErrorAction SilentlyContinue }
+                $jpg = $null
             }
         }
     }
@@ -379,8 +391,7 @@ try {
     # when an action needs it, so idle runs do no image processing at all
     $folderCoverSrc = @{}
     foreach ($g in $folderGroups) {
-        $src = $null
-        if ($drawingOk) { $src = Find-CoverSource $g.Name }
+        $src = Find-CoverSource $g.Name
         $folderCoverSrc[$g.Name] = $src
         $folderCoverMtime[$g.Name] = $null
         if ($src) {
@@ -414,7 +425,7 @@ try {
     # scan; their art is detected at build time, otherwise their kept-forever
     # art would be hex-dumped on every run.
     $picSet = $null
-    if ($metaflac -and $drawingOk) {
+    if ($metaflac) {
         $coverPaths = New-Object System.Collections.Generic.List[string]
         foreach ($g in $folderGroups) {
             if ($folderCoverSrc[$g.Name]) {
@@ -569,9 +580,13 @@ try {
                                 # processed, embed the original bytes
                                 $resized = Join-Path ([System.IO.Path]::GetTempPath()) ("opusart-" + [guid]::NewGuid().ToString('N') + ".jpg")
                                 try {
-                                    Convert-CoverArt -Source $embeddedPic -Destination $resized -MaxDim $CoverMaxDim -JpegQuality $CoverJpegQuality
-                                    Remove-Item -LiteralPath $embeddedPic -Force -ErrorAction SilentlyContinue
-                                    $embeddedPic = $resized
+                                    if (Test-DrawingLoaded) {
+                                        Convert-CoverArt -Source $embeddedPic -Destination $resized -MaxDim $CoverMaxDim -JpegQuality $CoverJpegQuality
+                                        Remove-Item -LiteralPath $embeddedPic -Force -ErrorAction SilentlyContinue
+                                        $embeddedPic = $resized
+                                    }
+                                    # without System.Drawing the original bytes
+                                    # are embedded as-is
                                 }
                                 catch {
                                     Write-Warning "Embedded art of $($f.FullName) could not be resized ($($_.Exception.Message)) -- embedding the original"
