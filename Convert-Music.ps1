@@ -371,15 +371,16 @@ try {
 
         $cover = Get-FolderCover -Dir $f.DirectoryName -NoOpus:$NoOpus -CoverMaxDim $CoverMaxDim -CoverJpegQuality $CoverJpegQuality
 
-        # ---------- 1) per-file metadata probe (vendor, picture) ----------
+        # ---------- 1) metadata probe (vendor, strip-gate art) ----------
         $vendor     = ''; $hasPic = $false
         $needVendor = $metaflac -and $flacVersion -and (-not $NoReencode) -and (-not $Force)
-        # strip or re-embed decision needs it
-        $needPic    = $metaflac -and ($cover -or -not $NoOpus)
-        if ($needVendor -or $needPic) {
-            # one --list serves both the vendor-skip check and the picture
-            # checks
-            $probe = & $metaflac --list --block-type=VORBIS_COMMENT,PICTURE $f.FullName
+        if ($needVendor -or $cover) {
+            # PICTURE is listed only for covered folders: the strip gate must
+            # know about art each run until it is stripped (which happens once).
+            # Listing it elsewhere hex-dumps the art through the pipeline even
+            # on fully up-to-date runs.
+            $blocks = if ($cover) { 'VORBIS_COMMENT,PICTURE' } else { 'VORBIS_COMMENT' }
+            $probe  = & $metaflac "--list" "--block-type=$blocks" $f.FullName
             foreach ($ln in $probe) {
                 # match the exact indented lines from 'metaflac --list' so tag
                 # text or picture hex dump lines can never trigger a false match
@@ -480,8 +481,10 @@ try {
                             # --discard-comments also drops the FLAC's embedded
                             # picture (opus stores it as a comment); re-embed it
                             # explicitly so folders without a folder image keep
-                            # their art
-                            if ($hasPic) {
+                            # their art. Detected here so the cost only occurs
+                            # when an opus is rebuilt;
+                            $hasEmbedded = [bool](& $metaflac --list --block-type=PICTURE $f.FullName)
+                            if ($hasEmbedded) {
                                 $embeddedPic = Join-Path ([System.IO.Path]::GetTempPath()) ("opusart-" + [guid]::NewGuid().ToString('N'))
                                 Invoke-Checked $metaflac @("--export-picture-to=$embeddedPic", $f.FullName)
                                 # normalize like a folder image (max dimension,
