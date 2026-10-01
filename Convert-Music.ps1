@@ -127,13 +127,14 @@ function Invoke-Checked([string]$ExePath, [string[]]$Arguments) {
     }
 }
 
-function Invoke-MetaflacBatch([string[]]$Operation, [string[]]$FilePaths) {
+function Invoke-MetaflacBatch([string[]]$Operation, [string[]]$FilePaths, [scriptblock]$ParseLine) {
     # metaflac accepts many files per call; chunked to stay under the ~32 KB
-    # Windows command-line limit. Per-file errors print on the console and the
-    # failing files produce no output; callers treat missing output as unknown
-    # and fail safe.
-    $out = New-Object System.Collections.Generic.List[string]
-    $i   = 0
+    # Windows command-line limit. Output is streamed line by line into
+    # $ParseLine instead of being collected, so a chunk with large embedded art
+    # does not end up held in memory twice. Per-file errors print on the console
+    # and the failing files produce no output; callers treat missing output as
+    # unknown and fail safe.
+    $i = 0
     while ($i -lt $FilePaths.Count) {
         $chunk = New-Object System.Collections.Generic.List[string]
         $len   = 0
@@ -142,10 +143,8 @@ function Invoke-MetaflacBatch([string[]]$Operation, [string[]]$FilePaths) {
             [void]$chunk.Add($FilePaths[$i])
             $i++
         }
-        $lines = & $metaflac @Operation @chunk
-        foreach ($ln in $lines) { [void]$out.Add("$ln") }
+        & $metaflac @Operation @chunk | ForEach-Object { & $ParseLine $_ }
     }
-    return $out
 }
 
 $flac    = Resolve-Tool 'flac'    $FlacExe
@@ -406,7 +405,11 @@ try {
     if ($metaflac -and $flacVersion -and (-not $NoReencode) -and (-not $Force)) {
         Write-Progress -Activity 'Converting music library' -Status 'Scanning encoder vendor strings...'
         $allPaths = @($files | ForEach-Object { $_.FullName })
-        foreach ($ln in (Invoke-MetaflacBatch @('--show-vendor-tag') $allPaths)) {
+        # --with-filename: metaflac prefixes output lines with the file path
+        # only when more than one file is passed; a single-file chunk (small
+        # library, last chunk) must produce the same parseable format
+        Invoke-MetaflacBatch @('--with-filename', '--show-vendor-tag') $allPaths {
+            param($ln)
             if ($ln -match '^(.*\.flac):(.*)$') { $vendorMap[$Matches[1]] = $Matches[2] }
         }
     }
@@ -427,7 +430,8 @@ try {
         if ($coverPaths.Count -gt 0) {
             Write-Progress -Activity 'Converting music library' -Status 'Scanning embedded art...'
             $picSet = New-Object 'System.Collections.Generic.HashSet[string]'
-            foreach ($ln in (Invoke-MetaflacBatch @('--list', '--block-type=PICTURE') $coverPaths)) {
+            Invoke-MetaflacBatch @('--with-filename', '--list', '--block-type=PICTURE') $coverPaths {
+                param($ln)
                 if ($ln -match '^(.*\.flac):METADATA block') { [void]$picSet.Add($Matches[1]) }
             }
         }
@@ -557,8 +561,10 @@ try {
                             # picture (opus stores it as a comment); re-embed it
                             # explicitly so folders without a folder image keep
                             # their art. Detected here so the cost only occurs
-                            # when an opus is rebuilt;
-                            $hasEmbedded = [bool](& $metaflac --list --block-type=PICTURE $f.FullName)
+                            # when an opus is rebuilt; one output line decides
+                            # the answer, so stop reading before the whole
+                            # picture is hex-dumped through the pipeline
+                            $hasEmbedded = [bool](& $metaflac --list --block-type=PICTURE $f.FullName | Select-Object -First 1)
                             if ($hasEmbedded) {
                                 $embeddedPic = Join-Path ([System.IO.Path]::GetTempPath()) ("opusart-" + [guid]::NewGuid().ToString('N'))
                                 Invoke-Checked $metaflac @("--export-picture-to=$embeddedPic", $f.FullName)
