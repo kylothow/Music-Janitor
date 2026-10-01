@@ -342,7 +342,7 @@ try {
                 -CurrentOperation $f.Name -PercentComplete $pct
         }
 
-        $cover = Get-FolderCover -Dir $f.DirectoryName -NoOpus $NoOpus -CoverMaxDim $CoverMaxDim -CoverJpegQuality $CoverJpegQuality
+        $cover = Get-FolderCover -Dir $f.DirectoryName -NoOpus:$NoOpus -CoverMaxDim $CoverMaxDim -CoverJpegQuality $CoverJpegQuality
 
         # ---------- 1) per-file metadata probe (vendor, picture) ----------
         $vendor     = ''; $hasPic = $false
