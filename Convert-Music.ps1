@@ -379,8 +379,10 @@ try {
             # checks
             $probe = & $metaflac --list --block-type=VORBIS_COMMENT,PICTURE $f.FullName
             foreach ($ln in $probe) {
-                if ($ln -match 'vendor string:') { $vendor = $ln }
-                elseif ($ln -match 'type: 6 \(PICTURE\)') { $hasPic = $true }
+                # match the exact indented lines from 'metaflac --list' so tag
+                # text or picture hex dump lines can never trigger a false match
+                if ($ln -match '^  vendor string: ') { $vendor = $ln }
+                elseif ($ln -match '^  type: 6 \(PICTURE\)$') { $hasPic = $true }
             }
         }
 
