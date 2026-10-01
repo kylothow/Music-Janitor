@@ -127,6 +127,27 @@ function Invoke-Checked([string]$ExePath, [string[]]$Arguments) {
     }
 }
 
+function Invoke-MetaflacBatch([string[]]$Operation, [string[]]$FilePaths) {
+    # metaflac accepts many files per call; chunked to stay under the ~32 KB
+    # Windows command-line limit. Per-file errors print on the console and the
+    # failing files produce no output; callers treat missing output as unknown
+    # and fail safe.
+    $out = New-Object System.Collections.Generic.List[string]
+    $i   = 0
+    while ($i -lt $FilePaths.Count) {
+        $chunk = New-Object System.Collections.Generic.List[string]
+        $len   = 0
+        while ($i -lt $FilePaths.Count -and ($chunk.Count -eq 0 -or ($len + $FilePaths[$i].Length + 1) -lt 28000)) {
+            $len += $FilePaths[$i].Length + 1
+            [void]$chunk.Add($FilePaths[$i])
+            $i++
+        }
+        $lines = & $metaflac @Operation @chunk
+        foreach ($ln in $lines) { [void]$out.Add("$ln") }
+    }
+    return $out
+}
+
 $flac    = Resolve-Tool 'flac'    $FlacExe
 $opusenc = Resolve-Tool 'opusenc' $OpusencExe
 
@@ -356,6 +377,20 @@ try {
 }
 
 try {
+    # batch-scan the encoder vendor strings before the loop: one
+    # --show-vendor-tag per chunk of files replaces a metaflac process per file
+    # (about 25x fewer spawns). A file that produces no line (unreadable, or a
+    # batch interrupted by a bad file) is absent from the map and falls back to
+    # the re-encode path, where failures surface loudly. Skipped when
+    # re-encoding is off/forced.
+    $vendorMap = @{}
+    if ($metaflac -and $flacVersion -and (-not $NoReencode) -and (-not $Force)) {
+        Write-Progress -Activity 'Converting music library' -Status 'Scanning encoder vendor strings...'
+        $allPaths = @($files | ForEach-Object { $_.FullName })
+        foreach ($ln in (Invoke-MetaflacBatch @('--show-vendor-tag') $allPaths)) {
+            if ($ln -match '^(.*\.flac):(.*)$') { $vendorMap[$Matches[1]] = $Matches[2] }
+        }
+    }
     # Write-Progress is throttled to 1% increments (slow on large libraries)
     $lastPct = -1
     for ($i = 0; $i -lt $files.Count; $i++) {
@@ -371,22 +406,14 @@ try {
 
         $cover = Get-FolderCover -Dir $f.DirectoryName -NoOpus:$NoOpus -CoverMaxDim $CoverMaxDim -CoverJpegQuality $CoverJpegQuality
 
-        # ---------- 1) metadata probe (vendor, strip-gate art) ----------
-        $vendor     = ''; $hasPic = $false
-        $needVendor = $metaflac -and $flacVersion -and (-not $NoReencode) -and (-not $Force)
-        if ($needVendor -or $cover) {
-            # PICTURE is listed only for covered folders: the strip gate must
-            # know about art each run until it is stripped (which happens once).
-            # Listing it elsewhere hex-dumps the art through the pipeline even
-            # on fully up-to-date runs.
-            $blocks = if ($cover) { 'VORBIS_COMMENT,PICTURE' } else { 'VORBIS_COMMENT' }
-            $probe  = & $metaflac "--list" "--block-type=$blocks" $f.FullName
-            foreach ($ln in $probe) {
-                # match the exact indented lines from 'metaflac --list' so tag
-                # text or picture hex dump lines can never trigger a false match
-                if ($ln -match '^  vendor string: ') { $vendor = $ln }
-                elseif ($ln -match '^  type: 6 \(PICTURE\)$') { $hasPic = $true }
-            }
+        # ---------- 1) metadata (vendor scan, strip-gate art) ----------
+        $vendor = ''
+        if ($vendorMap.ContainsKey($f.FullName)) { $vendor = $vendorMap[$f.FullName] }
+        $hasPic = $false
+        if ($cover -and $metaflac) {
+            # strip gate: the listing prints nothing when the file has no
+            # picture
+            $hasPic = [bool](& $metaflac --list --block-type=PICTURE $f.FullName)
         }
 
         # ---------- 2) lossless FLAC -> FLAC re-encode ----------
