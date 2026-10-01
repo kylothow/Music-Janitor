@@ -15,7 +15,9 @@
        picture is then REMOVED from the FLAC files (the folder image stays as
        the lossless master), and the resized JPEG is embedded into the .opus
        files instead. Folders without a recognized image keep their embedded
-       art, which is resized the same way into the .opus files.
+       art, which is resized the same way into the .opus files. JPEG art that
+       fits the size target, needs no rotation and would not shrink from
+       recompression is passed through unchanged.
     3) FLAC -> Opus at -OpusBitrate kbit/s VBR. A fixed allowlist of Vorbis
        comments is kept (see $KeepTags below); common synonyms are remapped to
        the canonical name when the latter is absent, and all other tags are
@@ -154,22 +156,32 @@ $folderCoverMtime = @{}  # folder -> cover source LastWriteTimeUtc (or $null)
 $tempCovers       = New-Object System.Collections.Generic.List[string]
 
 function Convert-CoverArt([string]$Source, [string]$Destination, [int]$MaxDim, [int]$JpegQuality) {
+    # a JPEG stores no quality header; "already optimal" in practice means that
+    # re-encoding it would not make it any smaller
+    $isJpeg = $false
+    $fs     = [System.IO.File]::OpenRead($Source)
+    try {
+        $magic  = New-Object byte[] 3
+        $isJpeg = ($fs.Read($magic, 0, 3) -eq 3) -and $magic[0] -eq 0xFF -and $magic[1] -eq 0xD8 -and $magic[2] -eq 0xFF
+    } finally { $fs.Close() }
     $img = [System.Drawing.Image]::FromFile($Source)
     try {
+        $rotated = $false
         # honor EXIF orientation (3 = 180, 6 = 90 CW, 8 = 270 CW; rare variants
         # ignored)
         try {
             switch ($img.GetPropertyItem(274).Value[0]) {
-                3 { $img.RotateFlip([System.Drawing.RotateFlipType]::Rotate180FlipNone) }
-                6 { $img.RotateFlip([System.Drawing.RotateFlipType]::Rotate90FlipNone) }
-                8 { $img.RotateFlip([System.Drawing.RotateFlipType]::Rotate270FlipNone) }
+                3 { $img.RotateFlip([System.Drawing.RotateFlipType]::Rotate180FlipNone); $rotated = $true }
+                6 { $img.RotateFlip([System.Drawing.RotateFlipType]::Rotate90FlipNone);  $rotated = $true }
+                8 { $img.RotateFlip([System.Drawing.RotateFlipType]::Rotate270FlipNone); $rotated = $true }
             }
         } catch { }  # EXIF orientation absent: no rotation
         # never upscale
-        $scale = [Math]::Min(1.0, $MaxDim / [Math]::Max($img.Width, $img.Height))
-        $tw    = [Math]::Max(1, [int][Math]::Round($img.Width  * $scale))
-        $th    = [Math]::Max(1, [int][Math]::Round($img.Height * $scale))
-        $bmp   = New-Object System.Drawing.Bitmap($tw, $th)
+        $scale      = [Math]::Min(1.0, $MaxDim / [Math]::Max($img.Width, $img.Height))
+        $tw         = [Math]::Max(1, [int][Math]::Round($img.Width  * $scale))
+        $th         = [Math]::Max(1, [int][Math]::Round($img.Height * $scale))
+        $downscaled = ($tw -lt $img.Width -or $th -lt $img.Height)
+        $bmp        = New-Object System.Drawing.Bitmap($tw, $th)
         try {
             $g = [System.Drawing.Graphics]::FromImage($bmp)
             try {
@@ -189,6 +201,13 @@ function Convert-CoverArt([string]$Source, [string]$Destination, [int]$MaxDim, [
                 if ($codec) { $bmp.Save($Destination, $codec, $ep) }
                 else { $bmp.Save($Destination, [System.Drawing.Imaging.ImageFormat]::Jpeg) }
             } finally { $ep.Dispose() }
+            # pass the source through untouched when it is a JPEG that needed
+            # neither rotation nor downscaling, and re-encoding would not shrink
+            # it
+            if ($isJpeg -and -not $rotated -and -not $downscaled -and
+                (Get-Item -LiteralPath $Source).Length -le (Get-Item -LiteralPath $Destination).Length) {
+                Copy-Item -LiteralPath $Source -Destination $Destination -Force
+            }
         } finally { $bmp.Dispose() }
     } finally { $img.Dispose() }
 }
