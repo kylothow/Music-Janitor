@@ -233,6 +233,15 @@ function Convert-CoverArt([string]$Source, [string]$Destination, [int]$MaxDim, [
     } finally { $img.Dispose() }
 }
 
+function Find-CoverSource([string]$Dir) {
+    # first recognized folder image in the folder, priority order, or $null
+    foreach ($n in $CoverNames) {
+        $p = Join-Path $Dir $n
+        if (Test-Path -LiteralPath $p -PathType Leaf) { return $p }
+    }
+    return $null
+}
+
 function Get-FolderCover([string]$Dir, [switch]$NoOpus, [int]$CoverMaxDim, [int]$CoverJpegQuality) {
     # returns the path of a resized cover JPEG for this folder (cached), or
     # $null. Under -NoOpus the resized JPEG would never be embedded, so only the
@@ -241,11 +250,7 @@ function Get-FolderCover([string]$Dir, [switch]$NoOpus, [int]$CoverMaxDim, [int]
     if ($folderCoverCache.ContainsKey($Dir)) { return $folderCoverCache[$Dir] }
     $jpg = $null
     if ($drawingOk) {
-        $src = $null
-        foreach ($n in $CoverNames) {
-            $p = Join-Path $Dir $n
-            if (Test-Path -LiteralPath $p -PathType Leaf) { $src = $p; break }
-        }
+        $src = Find-CoverSource $Dir
         $folderCoverMtime[$Dir] = $null
         if ($src) {
             # a cover vanishing mid-run (or a flaky share) must not abort the
@@ -334,9 +339,10 @@ if ($root.Length -gt 3) { $root = $root.TrimEnd('\') }
 $files = @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter *.flac -Force -ErrorAction SilentlyContinue)
 if ($files.Count -eq 0) { Write-Host "No FLAC files found under '$root'."; return }
 
-$folderCount = @($files | Group-Object DirectoryName).Count
-$metaInfo    = if ($metaflac) { 'yes' } else { 'NOT FOUND (tag filtering and art stripping disabled)' }
-$mode        = @(
+$folderGroups = @($files | Group-Object DirectoryName)
+$folderCount  = $folderGroups.Count
+$metaInfo     = if ($metaflac) { 'yes' } else { 'NOT FOUND (tag filtering and art stripping disabled)' }
+$mode         = @(
     if ($NoReencode) { 're-encode off' } else { 're-encode on' }
     if ($NoOpus) { 'opus off' } else { "opus on (${OpusBitrate}k VBR)" }
     "covers ${CoverMaxDim}px/q$CoverJpegQuality"
@@ -385,6 +391,28 @@ try {
             if ($ln -match '^(.*\.flac):(.*)$') { $vendorMap[$Matches[1]] = $Matches[2] }
         }
     }
+    # batch-scan the covered-folder files for embedded art: --list
+    # --block-type=PICTURE prints one prefixed METADATA block line per file that
+    # still carries art and nothing for clean files, so this costs one spawn per
+    # chunk instead of one per file. Cover-less folders are never part of the
+    # scan; their art is detected at build time, otherwise their kept-forever
+    # art would be hex-dumped on every run.
+    $picSet = $null
+    if ($metaflac -and $drawingOk) {
+        $coverPaths = New-Object System.Collections.Generic.List[string]
+        foreach ($g in $folderGroups) {
+            if (Find-CoverSource $g.Name) {
+                foreach ($m in $g.Group) { [void]$coverPaths.Add($m.FullName) }
+            }
+        }
+        if ($coverPaths.Count -gt 0) {
+            Write-Progress -Activity 'Converting music library' -Status 'Scanning embedded art...'
+            $picSet = New-Object 'System.Collections.Generic.HashSet[string]'
+            foreach ($ln in (Invoke-MetaflacBatch @('--list', '--block-type=PICTURE') $coverPaths)) {
+                if ($ln -match '^(.*\.flac):METADATA block') { [void]$picSet.Add($Matches[1]) }
+            }
+        }
+    }
     # Write-Progress is throttled to 1% increments (slow on large libraries)
     $lastPct = -1
     for ($i = 0; $i -lt $files.Count; $i++) {
@@ -400,15 +428,11 @@ try {
 
         $cover = Get-FolderCover -Dir $f.DirectoryName -NoOpus:$NoOpus -CoverMaxDim $CoverMaxDim -CoverJpegQuality $CoverJpegQuality
 
-        # ---------- 1) metadata (vendor scan, strip-gate art) ----------
+        # ---------- 1) per-file metadata (batch-scanned) ----------
         $vendor = ''
         if ($vendorMap.ContainsKey($f.FullName)) { $vendor = $vendorMap[$f.FullName] }
-        $hasPic = $false
-        if ($cover -and $metaflac) {
-            # strip gate: the listing prints nothing when the file has no
-            # picture
-            $hasPic = [bool](& $metaflac --list --block-type=PICTURE $f.FullName)
-        }
+        # files missing from the pic set (or the scan) keep their embedded art
+        $hasPic = ($null -ne $picSet -and $picSet.Contains($f.FullName))
 
         # ---------- 2) lossless FLAC -> FLAC re-encode ----------
         $needReencode = -not $NoReencode
