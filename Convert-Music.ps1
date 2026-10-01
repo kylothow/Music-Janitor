@@ -554,14 +554,16 @@ try {
                 # previous one
                 $opusTmp = "$opus.tmp"
                 try {
+                    # reset first, so the finally can never see the previous
+                    # file's temp path
+                    $embeddedPic = $null
                     # build (or reuse) the resized folder image now that the
                     # file is being rebuilt
                     $cover = $null
                     if ($coverSrc) {
                         $cover = Get-FolderCover -Dir $f.DirectoryName -NoOpus:$NoOpus -CoverMaxDim $CoverMaxDim -CoverJpegQuality $CoverJpegQuality
                     }
-                    $encArgs     = @('--quiet', "--bitrate=$OpusBitrate")
-                    $embeddedPic = $null
+                    $encArgs = @('--quiet', "--bitrate=$OpusBitrate")
                     if ($tagFilter) {
                         # don't copy the FLAC's tags wholesale; re-add only the
                         # allowed ones
