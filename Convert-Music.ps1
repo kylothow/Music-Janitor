@@ -246,16 +246,14 @@ function Get-FolderCover([string]$Dir, [switch]$NoOpus, [int]$CoverMaxDim, [int]
     # returns the path of a resized cover JPEG for this folder (cached), or
     # $null. Under -NoOpus the resized JPEG would never be embedded, so only the
     # source path is returned, after confirming the image loads; callers use it
-    # solely to decide whether the embedded art may be stripped.
+    # solely to decide whether the embedded art may be stripped. Called lazily
+    # (only when an action, strip or opus build, needs the cover) so idle runs
+    # never pay for image processing.
     if ($folderCoverCache.ContainsKey($Dir)) { return $folderCoverCache[$Dir] }
     $jpg = $null
     if ($drawingOk) {
         $src = Find-CoverSource $Dir
-        $folderCoverMtime[$Dir] = $null
         if ($src) {
-            # a cover vanishing mid-run (or a flaky share) must not abort the
-            # batch
-            try { $folderCoverMtime[$Dir] = (Get-Item -LiteralPath $src).LastWriteTimeUtc } catch { }
             if ($NoOpus) {
                 try {
                     $probe = [System.Drawing.Image]::FromFile($src)
@@ -383,6 +381,21 @@ try {
 }
 
 try {
+    # resolve every folder's cover source and mtime up front (cheap filesystem
+    # probes); the resized JPEG itself is built lazily by Get-FolderCover, only
+    # when an action needs it, so idle runs do no image processing at all
+    $folderCoverSrc = @{}
+    foreach ($g in $folderGroups) {
+        $src = $null
+        if ($drawingOk) { $src = Find-CoverSource $g.Name }
+        $folderCoverSrc[$g.Name] = $src
+        $folderCoverMtime[$g.Name] = $null
+        if ($src) {
+            # a cover vanishing mid-run (or a flaky share) must not abort the
+            # batch
+            try { $folderCoverMtime[$g.Name] = (Get-Item -LiteralPath $src).LastWriteTimeUtc } catch { }
+        }
+    }
     # batch-scan the encoder vendor strings before the loop: one
     # --show-vendor-tag per chunk of files replaces a metaflac process per file
     # (about 25x fewer spawns). A file that produces no line (unreadable, or a
@@ -407,7 +420,7 @@ try {
     if ($metaflac -and $drawingOk) {
         $coverPaths = New-Object System.Collections.Generic.List[string]
         foreach ($g in $folderGroups) {
-            if (Find-CoverSource $g.Name) {
+            if ($folderCoverSrc[$g.Name]) {
                 foreach ($m in $g.Group) { [void]$coverPaths.Add($m.FullName) }
             }
         }
@@ -432,7 +445,7 @@ try {
                 -CurrentOperation $f.Name -PercentComplete $pct
         }
 
-        $cover = Get-FolderCover -Dir $f.DirectoryName -NoOpus:$NoOpus -CoverMaxDim $CoverMaxDim -CoverJpegQuality $CoverJpegQuality
+        $coverSrc = $folderCoverSrc[$f.DirectoryName]
 
         # ---------- 1) per-file metadata (batch-scanned) ----------
         $vendor = ''
@@ -470,19 +483,24 @@ try {
 
         # ---------- 3) strip embedded art from the FLAC ----------
         $strippedNow = $false
-        if ($cover -and $metaflac -and $hasPic) {
-            try {
-                # metaflac's --preserve-modtime only keeps whole seconds;
-                # capture and restore the exact timestamp ourselves
-                $flacObj = Get-Item -LiteralPath $f.FullName
-                $mtime   = $flacObj.LastWriteTimeUtc
-                Invoke-Checked $metaflac @('--dont-use-padding', '--preserve-modtime',
-                    '--remove', '--block-type=PICTURE', $f.FullName)
-                $flacObj.LastWriteTimeUtc = $mtime
-                $strippedNow = $true; $picsStripped++
-            }
-            catch {
-                Write-Warning "Could not remove embedded art from: $($f.FullName) -- $($_.Exception.Message)"
+        if ($coverSrc -and $metaflac -and $hasPic) {
+            # build (or reuse) the resized folder image; the strip stays gated
+            # on the cover being usable, exactly as before
+            $cover = Get-FolderCover -Dir $f.DirectoryName -NoOpus:$NoOpus -CoverMaxDim $CoverMaxDim -CoverJpegQuality $CoverJpegQuality
+            if ($cover) {
+                try {
+                    # metaflac's --preserve-modtime only keeps whole seconds;
+                    # capture and restore the exact timestamp ourselves
+                    $flacObj = Get-Item -LiteralPath $f.FullName
+                    $mtime   = $flacObj.LastWriteTimeUtc
+                    Invoke-Checked $metaflac @('--dont-use-padding', '--preserve-modtime',
+                        '--remove', '--block-type=PICTURE', $f.FullName)
+                    $flacObj.LastWriteTimeUtc = $mtime
+                    $strippedNow = $true; $picsStripped++
+                }
+                catch {
+                    Write-Warning "Could not remove embedded art from: $($f.FullName) -- $($_.Exception.Message)"
+                }
             }
         }
 
@@ -521,6 +539,12 @@ try {
                 # previous one
                 $opusTmp = "$opus.tmp"
                 try {
+                    # build (or reuse) the resized folder image now that the
+                    # file is being rebuilt
+                    $cover = $null
+                    if ($coverSrc) {
+                        $cover = Get-FolderCover -Dir $f.DirectoryName -NoOpus:$NoOpus -CoverMaxDim $CoverMaxDim -CoverJpegQuality $CoverJpegQuality
+                    }
                     $encArgs     = @('--quiet', "--bitrate=$OpusBitrate")
                     $embeddedPic = $null
                     if ($tagFilter) {
@@ -587,8 +611,7 @@ finally {
 
 $mb            = [math]::Round($bytesSaved / 1MB, 1)
 $headlineColor = if ($failed -gt 0) { 'Red' } else { 'Green' }
-# cache has one entry per FLAC folder
-$folderCovers = @($folderCoverCache.Values | Where-Object { $_ }).Count
+$folderCovers  = @($folderCoverSrc.Values | Where-Object { $_ }).Count
 Write-Host ""
 Write-Host ("Done. {0} FLAC file(s) in {1} folder(s) processed." -f $files.Count, $folderCount) -ForegroundColor $headlineColor
 if ($NoReencode) {
