@@ -420,6 +420,11 @@ try {
                 $opusBytesTotal += (Get-Item -LiteralPath $opus).Length
             }
             else {
+                # encode via a sibling temp file: an interrupted or failed build
+                # must never leave a partial .opus behind (its fresh mtime would
+                # make the up-to-date check accept it), and must not destroy the
+                # previous one
+                $opusTmp = "$opus.tmp"
                 try {
                     $encArgs     = @('--quiet', "--bitrate=$OpusBitrate")
                     $embeddedPic = $null
@@ -458,7 +463,8 @@ try {
                     if ($cover) {
                         $encArgs += @('--discard-pictures', '--picture', $cover)
                     }
-                    Invoke-Checked $opusenc ($encArgs + @($f.FullName, $opus))
+                    Invoke-Checked $opusenc ($encArgs + @($f.FullName, $opusTmp))
+                    Move-Item -LiteralPath $opusTmp -Destination $opus -Force
                     $opusMade++
                     $flacBytesTotal += $flacNow.Length
                     $opusBytesTotal += (Get-Item -LiteralPath $opus).Length
@@ -466,10 +472,10 @@ try {
                 catch {
                     $failed++
                     [void]$failedFiles.Add("$($f.FullName) [opus]")
-                    Remove-Item -LiteralPath $opus -Force -ErrorAction SilentlyContinue
-                    Write-Warning "Opus encode FAILED: $($f.FullName) -- $($_.Exception.Message)"
+                    Write-Warning "Opus encode FAILED (previous .opus left in place): $($f.FullName) -- $($_.Exception.Message)"
                 }
                 finally {
+                    if (Test-Path -LiteralPath $opusTmp) { Remove-Item -LiteralPath $opusTmp -Force -ErrorAction SilentlyContinue }
                     if ($embeddedPic) { Remove-Item -LiteralPath $embeddedPic -Force -ErrorAction SilentlyContinue }
                 }
             }
