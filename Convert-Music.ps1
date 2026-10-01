@@ -342,15 +342,27 @@ try {
                 -CurrentOperation $f.Name -PercentComplete $pct
         }
 
-        # ---------- 1) lossless FLAC -> FLAC re-encode ----------
-        $needReencode = -not $NoReencode
-        if ($needReencode -and -not $Force -and $metaflac -and $flacVersion) {
-            $vendor = (& $metaflac --list --block-type=VORBIS_COMMENT $f.FullName) |
-                Where-Object { $_ -match 'vendor string:' } | Select-Object -First 1
-            if ("$vendor" -match ("libFLAC " + [regex]::Escape($flacVersion) + "(\s|$)")) {
-                # already encoded by this exact flac version
-                $needReencode = $false
+        $cover = Get-FolderCover -Dir $f.DirectoryName -NoOpus $NoOpus -CoverMaxDim $CoverMaxDim -CoverJpegQuality $CoverJpegQuality
+
+        # ---------- 1) per-file metadata probe (vendor, picture) ----------
+        $vendor     = ''; $hasPic = $false
+        $needVendor = $metaflac -and $flacVersion -and (-not $NoReencode) -and (-not $Force)
+        # strip or re-embed decision needs it
+        $needPic    = $metaflac -and ($cover -or -not $NoOpus)
+        if ($needVendor -or $needPic) {
+            # one --list serves both the vendor-skip check and the picture
+            # checks
+            $probe = & $metaflac --list --block-type=VORBIS_COMMENT,PICTURE $f.FullName
+            foreach ($ln in $probe) {
+                if ($ln -match 'vendor string:') { $vendor = $ln }
+                elseif ($ln -match 'type: 6 \(PICTURE\)') { $hasPic = $true }
             }
+        }
+
+        # ---------- 2) lossless FLAC -> FLAC re-encode ----------
+        $needReencode = -not $NoReencode
+        if ($needReencode -and -not $Force -and $vendor -match ("libFLAC " + [regex]::Escape($flacVersion) + "(\s|$)")) {
+            $needReencode = $false  # already encoded by this exact flac version
         }
         if (-not $needReencode) {
             $flacSkipped++
@@ -375,30 +387,25 @@ try {
             }
         }
 
-        # ---------- 2) strip embedded art from the FLAC ----------
-        $cover       = Get-FolderCover -Dir $f.DirectoryName -NoOpus $NoOpus -CoverMaxDim $CoverMaxDim -CoverJpegQuality $CoverJpegQuality
+        # ---------- 3) strip embedded art from the FLAC ----------
         $strippedNow = $false
-        if ($cover -and $metaflac) {
-            $hasPic = [bool](& $metaflac --list --block-type=PICTURE $f.FullName |
-                Where-Object { $_ -match 'METADATA block' })
-            if ($hasPic) {
-                try {
-                    # metaflac's --preserve-modtime only keeps whole seconds;
-                    # capture and restore the exact timestamp ourselves
-                    $flacObj = Get-Item -LiteralPath $f.FullName
-                    $mtime   = $flacObj.LastWriteTimeUtc
-                    Invoke-Checked $metaflac @('--dont-use-padding', '--preserve-modtime',
-                        '--remove', '--block-type=PICTURE', $f.FullName)
-                    $flacObj.LastWriteTimeUtc = $mtime
-                    $strippedNow = $true; $picsStripped++
-                }
-                catch {
-                    Write-Warning "Could not remove embedded art from: $($f.FullName) -- $($_.Exception.Message)"
-                }
+        if ($cover -and $metaflac -and $hasPic) {
+            try {
+                # metaflac's --preserve-modtime only keeps whole seconds;
+                # capture and restore the exact timestamp ourselves
+                $flacObj = Get-Item -LiteralPath $f.FullName
+                $mtime   = $flacObj.LastWriteTimeUtc
+                Invoke-Checked $metaflac @('--dont-use-padding', '--preserve-modtime',
+                    '--remove', '--block-type=PICTURE', $f.FullName)
+                $flacObj.LastWriteTimeUtc = $mtime
+                $strippedNow = $true; $picsStripped++
+            }
+            catch {
+                Write-Warning "Could not remove embedded art from: $($f.FullName) -- $($_.Exception.Message)"
             }
         }
 
-        # ---------- 3) FLAC -> Opus (allowed tags only, new cover) ----------
+        # ---------- 4) FLAC -> Opus (allowed tags only, new cover) ----------
         if (-not $NoOpus) {
             if ($OpusRoot) {
                 $rel  = $f.FullName.Substring($root.Length).TrimStart('\')
@@ -444,9 +451,7 @@ try {
                             # picture (opus stores it as a comment); re-embed it
                             # explicitly so folders without a folder image keep
                             # their art
-                            $hasEmbedded = [bool](& $metaflac --list --block-type=PICTURE $f.FullName |
-                                Where-Object { $_ -match 'METADATA block' })
-                            if ($hasEmbedded) {
+                            if ($hasPic) {
                                 $embeddedPic = Join-Path ([System.IO.Path]::GetTempPath()) ("opusart-" + [guid]::NewGuid().ToString('N'))
                                 Invoke-Checked $metaflac @("--export-picture-to=$embeddedPic", $f.FullName)
                                 # normalize like a folder image (max dimension,
