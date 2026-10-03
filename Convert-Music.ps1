@@ -90,7 +90,9 @@ if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
 $KeepTags    = @(
     'TITLE', 'ALBUM', 'ARTIST', 'ALBUMARTIST', 'GENRE', 'DATE',
     'TRACKNUMBER', 'DISCNUMBER', 'COPYRIGHT', 'ISRC', 'LABEL',
-    'TOTALDISCS', 'TOTALTRACKS', 'UPC'
+    'TOTALDISCS', 'TOTALTRACKS', 'UPC',
+    'REPLAYGAIN_TRACK_GAIN', 'REPLAYGAIN_TRACK_PEAK',
+    'REPLAYGAIN_ALBUM_GAIN', 'REPLAYGAIN_ALBUM_PEAK'
 )
 $TagSynonyms = @{
     DATE         = 'YEAR'
