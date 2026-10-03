@@ -52,8 +52,8 @@
     Assumes one album per folder: a single folder image is applied to all FLACs
     in it.
 .EXAMPLE
-    .\Convert-Music.ps1 -Path "D:\Music"
-    .\Convert-Music.ps1 -Path "D:\Music" -NoReencode -Force
+    .\Music-Janitor.ps1 -Path "D:\Music"
+    .\Music-Janitor.ps1 -Path "D:\Music" -NoReencode -Force
     # rebuild all .opus with the new rules
 #>
 [CmdletBinding()]
@@ -280,7 +280,7 @@ function Get-FolderCover([string]$Dir, [switch]$NoOpus, [int]$CoverMaxDim, [int]
         }
         else {
             try {
-                $jpg = Join-Path ([System.IO.Path]::GetTempPath()) ("opuscover-" + [guid]::NewGuid().ToString('N') + ".jpg")
+                $jpg = Join-Path ([System.IO.Path]::GetTempPath()) ("musicjanitor-cover-" + [guid]::NewGuid().ToString('N') + ".jpg")
                 Convert-CoverArt -Source $src -Destination $jpg -MaxDim $CoverMaxDim -JpegQuality $CoverJpegQuality
                 [void]$tempCovers.Add($jpg)
             }
@@ -581,12 +581,12 @@ try {
                             # picture is hex-dumped through the pipeline
                             $hasEmbedded = [bool](& $metaflac --list --block-type=PICTURE $f.FullName | Select-Object -First 1)
                             if ($hasEmbedded) {
-                                $embeddedPic = Join-Path ([System.IO.Path]::GetTempPath()) ("opusart-" + [guid]::NewGuid().ToString('N'))
+                                $embeddedPic = Join-Path ([System.IO.Path]::GetTempPath()) ("musicjanitor-art-" + [guid]::NewGuid().ToString('N'))
                                 Invoke-Checked $metaflac @("--export-picture-to=$embeddedPic", $f.FullName)
                                 # normalize like a folder image (max dimension,
                                 # JPEG quality); if the image cannot be
                                 # processed, embed the original bytes
-                                $resized = Join-Path ([System.IO.Path]::GetTempPath()) ("opusart-" + [guid]::NewGuid().ToString('N') + ".jpg")
+                                $resized = Join-Path ([System.IO.Path]::GetTempPath()) ("musicjanitor-art-" + [guid]::NewGuid().ToString('N') + ".jpg")
                                 try {
                                     if (Test-DrawingLoaded) {
                                         Convert-CoverArt -Source $embeddedPic -Destination $resized -MaxDim $CoverMaxDim -JpegQuality $CoverJpegQuality

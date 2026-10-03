@@ -1,4 +1,4 @@
-# Convert-Music.ps1
+# Music Janitor
 
 Windows PowerShell 5.1 script that maintains a FLAC music library and builds a matching Opus mirror. The FLAC files remain the lossless masters; the script never modifies an original except through flac's own verify-then-replace path.
 
@@ -25,15 +25,15 @@ The script degrades gracefully when optional pieces are missing: without metafla
 ## Usage
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Convert-Music.ps1 -Path "D:\Music"
+powershell -ExecutionPolicy Bypass -File .\Music-Janitor.ps1 -Path "D:\Music"
 ```
 
 ```powershell
 # rebuild every .opus with the current rules, FLACs untouched
-.\Convert-Music.ps1 -Path "D:\Music" -NoReencode -Force
+.\Music-Janitor.ps1 -Path "D:\Music" -NoReencode -Force
 
 # mirror the .opus files into a separate tree instead of next to the FLACs
-.\Convert-Music.ps1 -Path "D:\Music" -OpusRoot "D:\Music-opus"
+.\Music-Janitor.ps1 -Path "D:\Music" -OpusRoot "D:\Music-opus"
 ```
 
 | Parameter | Default | Description |
