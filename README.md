@@ -9,6 +9,7 @@ Windows PowerShell 5.1 script that maintains a FLAC music library and builds a m
 
 - [What it does](#what-it-does)
 - [Key features](#key-features)
+- [Download](#download)
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Common scenarios](#common-scenarios)
@@ -40,6 +41,10 @@ Failures are never fatal to the library: a file that fails leaves the original u
 | Incremental synchronization | Opus freshness is checked against both the source FLAC and the folder image; up-to-date files are skipped instantly. |
 | Flexible mirroring | Opus files are written next to the FLACs or mirrored into a separate tree (`-OpusRoot`), such as a folder synced to a portable player. |
 | Fault tolerance | Encoding failures leave existing files untouched, are reported per file, and produce a non-zero exit code. |
+
+## Download
+
+The direct link [`Music-Janitor.ps1`](https://github.com/kylothow/Music-Janitor/releases/latest/download/Music-Janitor.ps1) always points at the newest release's script. The [release page](https://github.com/kylothow/Music-Janitor/releases/latest) also offers a zip (script, README and LICENSE) and the release notes.
 
 ## Requirements
 
