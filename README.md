@@ -2,6 +2,7 @@
 
 [![PowerShell 5.1](https://img.shields.io/badge/PowerShell-5.1-5391FE?logo=powershell&logoColor=white)](https://learn.microsoft.com/powershell/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![Download the latest release](https://img.shields.io/github/v/release/kylothow/Music-Janitor)](https://github.com/kylothow/Music-Janitor/releases/latest/download/Music-Janitor.ps1)
 
 Windows PowerShell 5.1 script that maintains a FLAC music library and builds a matching Opus mirror. The FLAC files remain the lossless masters: the script re-encodes them with the newest installed FLAC encoder, standardizes cover art, reduces metadata to a fixed tag set, and mirrors the collection into compact Opus files. An original is never modified except through flac's own verify-then-replace path.
 
