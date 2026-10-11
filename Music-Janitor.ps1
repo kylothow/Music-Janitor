@@ -376,8 +376,11 @@ if ($files.Count -eq 0) { Write-Host "No FLAC files found under '$root'."; retur
 $folderGroups = @($files | Group-Object DirectoryName)
 $folderCount  = $folderGroups.Count
 $metaInfo     = if ($metaflac) { 'yes' } else { 'NOT FOUND (tag filtering and art stripping disabled)' }
+$threadsLabel = "$encodeThreads threads"
+if ($encodeThreads -eq 1) { $threadsLabel = '1 thread' }
+if (-not $threadArgs) { $threadsLabel = 'single-threaded' }
 $mode         = @(
-    if ($NoReencode) { 're-encode off' } else { 're-encode on' }
+    if ($NoReencode) { 're-encode off' } else { "re-encode on ($threadsLabel)" }
     if ($NoOpus) { 'opus off' } else { "opus on (${OpusBitrate}k VBR)" }
     "covers ${CoverMaxDim}px/q$CoverJpegQuality"
     if ($Force) { 'force rebuilds' }
