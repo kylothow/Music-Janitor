@@ -23,7 +23,7 @@ Windows PowerShell 5.1 script that maintains a FLAC music library and builds a m
 
 For every `*.flac` under `-Path` (recursively):
 
-1. **Lossless FLAC -> FLAC re-encode** with the newest installed flac.exe: `flac -8 --verify -s -f` (multithreaded when flac >= 1.5.0). flac replaces the file in-place via its own temp file, only after the decode-and-compare check passes. Files already encoded by the installed flac version are skipped (vendor-string check via metaflac), so re-running after a flac upgrade only touches old files. Original modification times are preserved exactly.
+1. **Lossless FLAC -> FLAC re-encode** with the newest installed flac.exe: `flac -8 --verify -s -f` (multithreaded when flac >= 1.5.0; the thread count is capped because flac's verify pass runs on a single thread, so extra worker threads stop helping and can slow the re-encode down; see `-FlacThreads`). flac replaces the file in-place via its own temp file, only after the decode-and-compare check passes. Files already encoded by the installed flac version are skipped (vendor-string check via metaflac), so re-running after a flac upgrade only touches old files. Original modification times are preserved exactly.
 2. **Cover art management** (assumes one album per folder): if a folder contains a recognized folder image, it is resized once per folder and the embedded PICTURE blocks are removed from that folder's FLACs (the folder image remains the lossless master) while the resized JPEG is embedded into the `.opus` files instead. Folders without a recognized image keep their embedded art, which is normalized the same way and carried over into the `.opus` files. Details in [Metadata and cover specifications](#metadata-and-cover-specifications).
 3. **FLAC -> Opus** at VBR (default 128 kbit/s). Only the tags in the [allowlist](#tag-allowlist-and-synonym-remapping) are carried over, with common synonyms remapped to the canonical names; all other tags are intentionally dropped.
 
@@ -124,6 +124,7 @@ A higher bitrate with more compact covers:
 | `-OpusBitrate` | `Int32` | `128` | `24-512` | Opus VBR target in kbit/s; 128 is transparent for stereo music. |
 | `-CoverMaxDim` | `Int32` | `1200` | `64-4000` | Max width/height (px) of the JPEG embedded in `.opus`. |
 | `-CoverJpegQuality` | `Int32` | `86` | `50-100` | JPEG quality for the embedded cover. |
+| `-FlacThreads` | `Int32` | `0` | `0-64` | `--threads` for the re-encode; 0 = automatic (logical processors, capped at 6). |
 | `-OpusRoot` | `String` | *(none)* | directory path | Mirror `.opus` files into this tree instead of next to the FLACs. |
 | `-NoReencode` | `Switch` | off | | Skip the FLAC -> FLAC re-encode. |
 | `-NoOpus` | `Switch` | off | | Skip Opus creation (FLAC maintenance only). |
@@ -181,6 +182,7 @@ Processing rules:
 ## Safety and performance
 
 - **Non-destructive re-encoding**: flac writes a temporary file and performs a decode-and-verify pass; only on success does it atomically replace the original.
+- **Re-encode threading**: flac 1.5.0's threaded encoder runs its `--verify` decoder on a single thread, so the re-encode uses the logical processor count capped at 6; more worker threads stop helping and can slow the phase down. `-FlacThreads` overrides the automatic choice.
 - **Atomic Opus generation**: Opus files are encoded to `<name>.opus.tmp` and renamed into place, so an interrupted or failed run never leaves a partial file (and never destroys the previous good one).
 - **Timestamp accuracy**: exact modification timestamps (`LastWriteTimeUtc`) are preserved on FLAC files through re-encoding and art stripping.
 - **UTF-8 console handling**: the console output encoding is switched to UTF-8 for the run (and restored afterwards) so non-ASCII tag values survive into the `.opus` files on any console.
