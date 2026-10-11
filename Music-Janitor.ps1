@@ -35,6 +35,12 @@
     the .opus files; images are never upscaled.
 .PARAMETER CoverJpegQuality
     JPEG quality (50-100) for the embedded cover art.
+.PARAMETER FlacThreads
+    --threads value for the FLAC re-encode, 0-64 (flac 1.5.0 or newer). The
+    default 0 is automatic: the number of logical processors, capped at 6.
+    flac 1.5.0's threaded encoder runs its --verify decoder on a single
+    thread, so worker threads beyond that cap stop helping and can slow
+    the re-encode down.
 .PARAMETER FlacExe
     Full path to flac.exe when it is not on PATH.
 .PARAMETER OpusencExe
@@ -69,6 +75,9 @@ param(
 
     [ValidateRange(50, 100)]
     [int]$CoverJpegQuality = 86,  # JPEG quality for the embedded cover
+
+    [ValidateRange(0, 64)]
+    [int]$FlacThreads = 0,  # --threads for the re-encode; 0 = automatic
 
     [string]$FlacExe,  # optional: full path to flac.exe
     [string]$OpusencExe,  # optional: full path to opusenc.exe
@@ -338,8 +347,16 @@ function Format-Bytes([long]$Bytes) {
 $flacVersion = ''
 $verLine     = (& $flac --version) | Select-Object -First 1
 if ("$verLine" -match 'flac\s+([\d.]+)') { $flacVersion = $Matches[1].Trim('.') }
+# flac 1.5.0's threaded encoder still runs the --verify decoder, the in-order
+# frame writes and the input reading on a single (main) thread, so throughput
+# saturates at about five worker threads no matter how many cores exist; extra
+# workers only contend with that serial stage. Measured on a hybrid 6P+4E
+# laptop, a 34.8 min album takes 2.25 s at 4-6 threads and 3.20 s at 16. The
+# automatic value is therefore capped; -FlacThreads overrides it when needed.
+$encodeThreads = [Math]::Min([Environment]::ProcessorCount, 6)
+if ($FlacThreads -gt 0) { $encodeThreads = $FlacThreads }
 $threadArgs = @()
-try { if ([version]$flacVersion -ge [version]'1.5.0') { $threadArgs = @("--threads=$([Environment]::ProcessorCount)") } } catch { }
+try { if ([version]$flacVersion -ge [version]'1.5.0') { $threadArgs = @("--threads=$encodeThreads") } } catch { }
 
 # opusenc version, e.g. "0.2-52-g5f894e9" (opus-tools); informational only
 $opusencVersion = ''
