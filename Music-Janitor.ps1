@@ -357,6 +357,9 @@ $encodeThreads = [Math]::Min([Environment]::ProcessorCount, 6)
 if ($FlacThreads -gt 0) { $encodeThreads = $FlacThreads }
 $threadArgs = @()
 try { if ([version]$flacVersion -ge [version]'1.5.0') { $threadArgs = @("--threads=$encodeThreads") } } catch { }
+if ($FlacThreads -gt 0 -and -not $threadArgs) {
+    Write-Warning "-FlacThreads ignored: flac $flacVersion does not support --threads (needs 1.5.0 or newer)."
+}
 
 # opusenc version, e.g. "0.2-52-g5f894e9" (opus-tools); informational only
 $opusencVersion = ''
