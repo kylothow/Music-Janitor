@@ -444,7 +444,7 @@ try {
         # --with-filename: metaflac prefixes output lines with the file path
         # only when more than one file is passed; a single-file chunk (small
         # library, last chunk) must produce the same parseable format
-        Invoke-MetaflacBatch @('--with-filename', '--show-vendor-tag') $allPaths {
+        Invoke-MetaflacBatch -Operation @('--with-filename', '--show-vendor-tag') -FilePaths $allPaths -ParseLine {
             param($ln)
             if ($ln -match '^(.*\.flac):(.*)$') { $vendorMap[$Matches[1]] = $Matches[2] }
         }
@@ -466,7 +466,7 @@ try {
         if ($coverPaths.Count -gt 0) {
             Write-Progress -Activity 'Converting music library' -Status 'Scanning embedded art...'
             $picSet = New-Object 'System.Collections.Generic.HashSet[string]'
-            Invoke-MetaflacBatch @('--with-filename', '--list', '--block-type=PICTURE') $coverPaths {
+            Invoke-MetaflacBatch -Operation @('--with-filename', '--list', '--block-type=PICTURE') -FilePaths $coverPaths -ParseLine {
                 param($ln)
                 if ($ln -match '^(.*\.flac):METADATA block') { [void]$picSet.Add($Matches[1]) }
             }
