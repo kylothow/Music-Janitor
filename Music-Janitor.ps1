@@ -556,7 +556,17 @@ try {
                 $opus = [System.IO.Path]::ChangeExtension($f.FullName, '.opus')
             }
 
-            $flacNow    = Get-Item -LiteralPath $f.FullName
+            # a FLAC vanishing or becoming unreadable after its re-encode (or a
+            # flaky share) must not abort the batch; report it as an opus
+            # failure and move on
+            $flacNow    = $null
+            try { $flacNow = Get-Item -LiteralPath $f.FullName }
+            catch {
+                $failed++
+                [void]$failedFiles.Add("$($f.FullName) [opus]")
+                Write-Warning "Opus build FAILED (FLAC unreadable mid-run): $($f.FullName) -- $($_.Exception.Message)"
+                continue
+            }
             $coverMtime = $folderCoverMtime[$f.DirectoryName]
             # treat a vanished opus (or flaky share) as not up to date rather
             # than aborting
