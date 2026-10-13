@@ -611,8 +611,14 @@ try {
                             # their art. Detected here so the cost only occurs
                             # when an opus is rebuilt; one output line decides
                             # the answer, so stop reading before the whole
-                            # picture is hex-dumped through the pipeline
-                            $hasEmbedded = [bool](& $metaflac --list --block-type=PICTURE $f.FullName | Select-Object -First 1)
+                            # picture is hex-dumped through the pipeline. An
+                            # empty result with a non-zero exit is a probe
+                            # failure, not a clean "no art"
+                            $probeLine = & $metaflac --list --block-type=PICTURE $f.FullName | Select-Object -First 1
+                            if (-not $probeLine -and $LASTEXITCODE -ne 0) {
+                                throw "metaflac picture probe failed (exit code $LASTEXITCODE)"
+                            }
+                            $hasEmbedded = [bool]$probeLine
                             if ($hasEmbedded) {
                                 $embeddedPic = Join-Path ([System.IO.Path]::GetTempPath()) ("musicjanitor-art-" + [guid]::NewGuid().ToString('N'))
                                 Invoke-Checked $metaflac @("--export-picture-to=$embeddedPic", $f.FullName)
