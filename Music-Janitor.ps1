@@ -397,7 +397,7 @@ Write-Host "Mode    : $mode"
 $reencoded    = 0; $flacSkipped = 0; $opusMade = 0; $opusSkipped = 0; $failed = 0
 $picsStripped = 0
 $bytesSaved   = [long]0
-# files with an Opus after this run (made or up to date)
+# size totals for files with an Opus after this run (made or up to date)
 $flacBytesTotal = [long]0
 $opusBytesTotal = [long]0
 # path + failing phase, for the summary
