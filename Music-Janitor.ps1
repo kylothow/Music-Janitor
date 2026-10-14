@@ -678,7 +678,7 @@ finally {
 $mb            = [Math]::Round($bytesSaved / 1MB, 1)
 $headlineColor = if ($failed -gt 0) { 'Red' } else { 'Green' }
 $folderCovers  = @($folderCoverSrc.Values | Where-Object { $_ }).Count
-Write-Host ""
+Write-Host ''
 Write-Host ("Done. {0} FLAC file(s) in {1} folder(s) processed." -f $files.Count, $folderCount) -ForegroundColor $headlineColor
 if ($NoReencode) {
     Write-Host '  Re-encode : (disabled)'
