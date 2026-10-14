@@ -368,6 +368,7 @@ $ovLine         = (& $opusenc --version) | Select-Object -First 1
 if ("$ovLine" -match 'opus-tools\s+(\S+)') { $opusencVersion = $Matches[1] }
 elseif ("$ovLine" -match '([\d.]+)') { $opusencVersion = $Matches[1] }
 if (-not $opusencVersion) { $opusencVersion = '(unknown)' }
+$flacLabel = if ($flacVersion) { "flac $flacVersion" } else { 'flac (unknown)' }
 
 $root  = (Resolve-Path -LiteralPath $Path).Path
 # keep a drive root as 'C:\': trimming it to 'C:' would make Get-ChildItem
@@ -391,7 +392,7 @@ $mode         = @(
     if ($OpusRoot) { "opus root: $OpusRoot" }
 ) -join '; '
 Write-Host "Catalog : $root -- $($files.Count) FLAC file(s) in $folderCount folder(s)"
-Write-Host "Tools   : flac $flacVersion, metaflac $metaInfo, opusenc $opusencVersion"
+Write-Host "Tools   : $flacLabel, metaflac $metaInfo, opusenc $opusencVersion"
 Write-Host "Mode    : $mode"
 
 $reencoded    = 0; $flacSkipped = 0; $opusMade = 0; $opusSkipped = 0; $failed = 0
