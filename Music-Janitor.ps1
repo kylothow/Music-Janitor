@@ -675,7 +675,7 @@ finally {
     Write-Progress -Activity 'Converting music library' -Completed
 }
 
-$mb            = [math]::Round($bytesSaved / 1MB, 1)
+$mb            = [Math]::Round($bytesSaved / 1MB, 1)
 $headlineColor = if ($failed -gt 0) { 'Red' } else { 'Green' }
 $folderCovers  = @($folderCoverSrc.Values | Where-Object { $_ }).Count
 Write-Host ""
@@ -691,7 +691,7 @@ if ($NoOpus) {
 } else {
     Write-Host ("  Opus      : {0} created, {1} up to date" -f $opusMade, $opusSkipped)
     if ($opusBytesTotal -gt 0) {
-        $pctSmaller = [int][math]::Round(100 * (1.0 - $opusBytesTotal / [double]$flacBytesTotal))
+        $pctSmaller = [int][Math]::Round(100 * (1.0 - $opusBytesTotal / [double]$flacBytesTotal))
         Write-Host ("  Size      : {0} FLAC -> {1} Opus ({2}% smaller)" -f `
             (Format-Bytes $flacBytesTotal), (Format-Bytes $opusBytesTotal), $pctSmaller)
     }
