@@ -356,6 +356,7 @@ if ("$verLine" -match 'flac\s+([\d.]+)') { $flacVersion = $Matches[1].Trim('.') 
 $encodeThreads = [Math]::Min([Environment]::ProcessorCount, 6)
 if ($FlacThreads -gt 0) { $encodeThreads = $FlacThreads }
 $threadArgs = @()
+# unparseable version stays single-threaded
 try { if ([version]$flacVersion -ge [version]'1.5.0') { $threadArgs = @("--threads=$encodeThreads") } } catch { }
 if ($FlacThreads -gt 0 -and -not $threadArgs) {
     $verNote = if ($flacVersion) { "flac $flacVersion" } else { 'the installed flac (version unknown)' }
