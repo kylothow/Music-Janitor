@@ -479,7 +479,7 @@ try {
     $lastPct = -1
     for ($i = 0; $i -lt $files.Count; $i++) {
         $f   = $files[$i]
-        $pct = [int](100 * $i / $files.Count)
+        $pct = [int](100 * ($i + 1) / $files.Count)
         if ($pct -ne $lastPct) {
             $lastPct = $pct
             # empty for files directly in the root
