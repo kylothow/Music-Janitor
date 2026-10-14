@@ -284,7 +284,7 @@ function Get-FolderCover([string]$Dir, [switch]$NoOpus, [int]$CoverMaxDim, [int]
                 $jpg = $src
             }
             catch {
-                Write-Warning "Cover '$src' could not be loaded ($($_.Exception.Message)) - keeping embedded art for: $Dir"
+                Write-Warning "Cover '$src' could not be loaded ($($_.Exception.Message)) -- keeping embedded art for: $Dir"
             }
         }
         else {
@@ -294,7 +294,7 @@ function Get-FolderCover([string]$Dir, [switch]$NoOpus, [int]$CoverMaxDim, [int]
                 [void]$tempCovers.Add($jpg)
             }
             catch {
-                Write-Warning "Cover '$src' could not be processed ($($_.Exception.Message)) - keeping embedded art for: $Dir"
+                Write-Warning "Cover '$src' could not be processed ($($_.Exception.Message)) -- keeping embedded art for: $Dir"
                 if ($jpg -and (Test-Path -LiteralPath $jpg)) { Remove-Item -LiteralPath $jpg -Force -ErrorAction SilentlyContinue }
                 $jpg = $null
             }
@@ -638,7 +638,7 @@ try {
                                     # are embedded as-is
                                 }
                                 catch {
-                                    Write-Warning "Embedded art of $($f.FullName) could not be resized ($($_.Exception.Message)) - embedding the original"
+                                    Write-Warning "Embedded art of $($f.FullName) could not be resized ($($_.Exception.Message)) -- embedding the original"
                                     Remove-Item -LiteralPath $resized -Force -ErrorAction SilentlyContinue
                                 }
                                 $encArgs += @('--discard-pictures', '--picture', $embeddedPic)
