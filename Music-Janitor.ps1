@@ -384,7 +384,8 @@ $folderCount  = $folderGroups.Count
 $metaInfo     = if ($metaflac) { 'yes' } else { 'NOT FOUND (tag filtering and art stripping disabled)' }
 $threadsLabel = "$encodeThreads threads"
 if ($encodeThreads -eq 1) { $threadsLabel = '1 thread' }
-if (-not $threadArgs) { $threadsLabel = 'single-threaded' }
+if (-not $threadArgs -and $flacVersion) { $threadsLabel = 'single-threaded (pre-1.5.0)' }
+if (-not $threadArgs -and -not $flacVersion) { $threadsLabel = 'single-threaded (unknown)' }
 $mode         = @(
     if ($NoReencode) { 're-encode off' } else { "re-encode on ($threadsLabel)" }
     if ($NoOpus) { 'opus off' } else { "opus on (${OpusBitrate}k VBR)" }
