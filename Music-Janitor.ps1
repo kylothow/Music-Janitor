@@ -323,16 +323,10 @@ function New-OpusTagArgs([string]$FlacPath) {
         $vals[$n].Add($l.Substring($i + 1))
     }
     foreach ($t in $KeepTags) {
-        $src = $t
-        if (-not $vals.ContainsKey($t)) {
-            # synonyms may list several alternatives (e.g. TOTALDISCS ->
-            # TOTALDISC / TOTAL_DISCS); the first one present wins
-            $src = $null
-            foreach ($syn in @($TagSynonyms[$t])) {
-                if ($syn -and $vals.ContainsKey($syn)) { $src = $syn; break }
-            }
-            if (-not $src) { continue }
-        }
+        # the canonical tag plus its synonyms in order; the first one present
+        # wins, and missing tags are skipped
+        $src = @($t) + @($TagSynonyms[$t]) | Where-Object { $_ -and $vals.ContainsKey($_) } | Select-Object -First 1
+        if (-not $src) { continue }
         foreach ($v in $vals[$src]) { '--comment', "$t=$v" }
     }
 }
