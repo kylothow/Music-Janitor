@@ -620,24 +620,35 @@ try {
                             if ($hasEmbedded) {
                                 $embeddedPic = Join-Path ([System.IO.Path]::GetTempPath()) ("musicjanitor-art-" + [guid]::NewGuid().ToString('N'))
                                 Invoke-Checked $metaflac @("--export-picture-to=$embeddedPic", $f.FullName)
-                                # normalize like a folder image (max dimension,
-                                # JPEG quality); if the image cannot be
-                                # processed, embed the original bytes
-                                $resized = Join-Path ([System.IO.Path]::GetTempPath()) ("musicjanitor-art-" + [guid]::NewGuid().ToString('N') + ".jpg")
-                                try {
-                                    if (Test-DrawingLoaded) {
-                                        Convert-CoverArt -Source $embeddedPic -Destination $resized -MaxDim $CoverMaxDim -JpegQuality $CoverJpegQuality
-                                        Remove-Item -LiteralPath $embeddedPic -Force -ErrorAction SilentlyContinue
-                                        $embeddedPic = $resized
+                                if ((Get-Item -LiteralPath $embeddedPic).Length -eq 0) {
+                                    # placeholder PICTURE block with no image
+                                    # bytes; neither GDI+ nor opusenc accepts
+                                    # empty input, so build a tag-only opus
+                                    Remove-Item -LiteralPath $embeddedPic -Force -ErrorAction SilentlyContinue
+                                    $embeddedPic = $null
+                                    Write-Warning "Empty embedded art skipped for: $($f.FullName)"
+                                }
+                                if ($embeddedPic) {
+                                    # normalize like a folder image (max
+                                    # dimension, JPEG quality); if the image
+                                    # cannot be processed, embed the original
+                                    # bytes
+                                    $resized = Join-Path ([System.IO.Path]::GetTempPath()) ("musicjanitor-art-" + [guid]::NewGuid().ToString('N') + ".jpg")
+                                    try {
+                                        if (Test-DrawingLoaded) {
+                                            Convert-CoverArt -Source $embeddedPic -Destination $resized -MaxDim $CoverMaxDim -JpegQuality $CoverJpegQuality
+                                            Remove-Item -LiteralPath $embeddedPic -Force -ErrorAction SilentlyContinue
+                                            $embeddedPic = $resized
+                                        }
+                                        # without System.Drawing the original
+                                        # bytes are embedded as-is
                                     }
-                                    # without System.Drawing the original bytes
-                                    # are embedded as-is
+                                    catch {
+                                        Write-Warning "Embedded art of $($f.FullName) could not be resized ($($_.Exception.Message)) -- embedding the original"
+                                        Remove-Item -LiteralPath $resized -Force -ErrorAction SilentlyContinue
+                                    }
+                                    $encArgs += @('--discard-pictures', '--picture', $embeddedPic)
                                 }
-                                catch {
-                                    Write-Warning "Embedded art of $($f.FullName) could not be resized ($($_.Exception.Message)) -- embedding the original"
-                                    Remove-Item -LiteralPath $resized -Force -ErrorAction SilentlyContinue
-                                }
-                                $encArgs += @('--discard-pictures', '--picture', $embeddedPic)
                             }
                         }
                     }
