@@ -279,8 +279,8 @@ function Get-FolderCover([string]$Dir, [switch]$NoOpus, [int]$CoverMaxDim, [int]
     if ($src -and (Test-DrawingLoaded)) {
         if ($NoOpus) {
             try {
-                $probe = [System.Drawing.Image]::FromFile($src)
-                $probe.Dispose()
+                $probeLine = [System.Drawing.Image]::FromFile($src)
+                $probeLine.Dispose()
                 $jpg = $src
             }
             catch {
@@ -345,8 +345,8 @@ function Format-Bytes([long]$Bytes) {
 
 # installed flac version, e.g. "1.5.0"
 $flacVersion = ''
-$verLine     = (& $flac --version) | Select-Object -First 1
-if ("$verLine" -match 'flac\s+([\d.]+)') { $flacVersion = $Matches[1].Trim('.') }
+$flacVerLine = (& $flac --version) | Select-Object -First 1
+if ("$flacVerLine" -match 'flac\s+([\d.]+)') { $flacVersion = $Matches[1].Trim('.') }
 # flac 1.5.0's threaded encoder still runs the --verify decoder, the in-order
 # frame writes and the input reading on a single (main) thread, so throughput is
 # expected to saturate at about five worker threads; extra workers only contend
@@ -365,9 +365,9 @@ if ($FlacThreads -gt 0 -and -not $threadArgs) {
 
 # opusenc version, e.g. "0.2-52-g5f894e9" (opus-tools); informational only
 $opusencVersion = ''
-$ovLine         = (& $opusenc --version) | Select-Object -First 1
-if ("$ovLine" -match 'opus-tools\s+(\S+)') { $opusencVersion = $Matches[1] }
-elseif ("$ovLine" -match '([\d.]+)') { $opusencVersion = $Matches[1] }
+$opusVerLine    = (& $opusenc --version) | Select-Object -First 1
+if ("$opusVerLine" -match 'opus-tools\s+(\S+)') { $opusencVersion = $Matches[1] }
+elseif ("$opusVerLine" -match '([\d.]+)') { $opusencVersion = $Matches[1] }
 if (-not $opusencVersion) { $opusencVersion = '(unknown)' }
 $flacLabel = if ($flacVersion) { "flac $flacVersion" } else { 'flac (unknown)' }
 
@@ -512,10 +512,10 @@ try {
                 # -8 = max preset; --verify = decode & compare while encoding;
                 # -f  = in-place replace via temp file, only on success
                 Invoke-Checked $flac (@('-8', '--verify', '-s', '-f') + $threadArgs + @('--', $f.FullName))
-                $flacNew = Get-Item -LiteralPath $f.FullName
-                $flacNew.LastWriteTimeUtc = $mtime  # keep original timestamps
+                $flacNow = Get-Item -LiteralPath $f.FullName
+                $flacNow.LastWriteTimeUtc = $mtime  # keep original timestamps
                 $reencoded++
-                $bytesSaved += $sizeBefore - $flacNew.Length
+                $bytesSaved += $sizeBefore - $flacNow.Length
             }
             catch {
                 $failed++
@@ -535,11 +535,11 @@ try {
                 try {
                     # metaflac's --preserve-modtime only keeps whole seconds;
                     # capture and restore the exact timestamp ourselves
-                    $flacObj = Get-Item -LiteralPath $f.FullName
-                    $mtime   = $flacObj.LastWriteTimeUtc
+                    $flacNow = Get-Item -LiteralPath $f.FullName
+                    $mtime   = $flacNow.LastWriteTimeUtc
                     Invoke-Checked $metaflac @('--dont-use-padding', '--preserve-modtime',
                         '--remove', '--block-type=PICTURE', $f.FullName)
-                    $flacObj.LastWriteTimeUtc = $mtime
+                    $flacNow.LastWriteTimeUtc = $mtime
                     $strippedNow = $true; $picsStripped++
                 }
                 catch {
