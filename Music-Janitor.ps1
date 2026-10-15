@@ -348,11 +348,11 @@ $flacVersion = ''
 $verLine     = (& $flac --version) | Select-Object -First 1
 if ("$verLine" -match 'flac\s+([\d.]+)') { $flacVersion = $Matches[1].Trim('.') }
 # flac 1.5.0's threaded encoder still runs the --verify decoder, the in-order
-# frame writes and the input reading on a single (main) thread, so throughput
-# saturates at about five worker threads no matter how many cores exist; extra
-# workers only contend with that serial stage. Measured on a hybrid 6P+4E
-# laptop, a 34.8 min album takes 2.25 s at 4-6 threads and 3.20 s at 16. The
-# automatic value is therefore capped; -FlacThreads overrides it when needed.
+# frame writes and the input reading on a single (main) thread, so throughput is
+# expected to saturate at about five worker threads; extra workers only contend
+# with that serial stage. Measured on a hybrid 6P+4E laptop, a 34.8 min album
+# takes 2.25 s at 4-6 threads and 3.20 s at 16. The automatic value is therefore
+# capped; -FlacThreads overrides it when needed.
 $encodeThreads = [Math]::Min([Environment]::ProcessorCount, 6)
 if ($FlacThreads -gt 0) { $encodeThreads = $FlacThreads }
 $threadArgs = @()
