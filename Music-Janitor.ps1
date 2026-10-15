@@ -554,7 +554,7 @@ try {
                 $rel  = $f.FullName.Substring($root.Length).TrimStart('\')
                 $opus = Join-Path $OpusRoot ($rel -replace '\.flac$', '.opus')
                 $dir  = Split-Path -Parent $opus
-                if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+                [void](New-Item -ItemType Directory -Path $dir -Force)
             }
             else {
                 $opus = [System.IO.Path]::ChangeExtension($f.FullName, '.opus')
