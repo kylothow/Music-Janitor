@@ -341,6 +341,7 @@ function Format-Bytes([long]$Bytes) {
 $flacVersion = ''
 $flacVerLine = (& $flac --version) | Select-Object -First 1
 if ("$flacVerLine" -match 'flac\s+([\d.]+)') { $flacVersion = $Matches[1].Trim('.') }
+if (-not $flacVersion) { Write-Warning 'Could not determine the flac version (re-encoding single-threaded).' }
 # flac 1.5.0's threaded encoder still runs the --verify decoder, the in-order
 # frame writes and the input reading on a single (main) thread, so throughput is
 # expected to saturate at about five worker threads; extra workers only contend
@@ -378,7 +379,8 @@ $folderCount  = $folderGroups.Count
 $metaInfo     = if ($metaflac) { 'yes' } else { 'NOT FOUND (tag filtering and art stripping disabled)' }
 $threadsLabel = "$encodeThreads threads"
 if ($encodeThreads -eq 1) { $threadsLabel = '1 thread' }
-if (-not $threadArgs) { $threadsLabel = 'single-threaded' }
+if (-not $threadArgs -and $flacVersion) { $threadsLabel = 'single-threaded (pre-1.5.0)' }
+if (-not $threadArgs -and -not $flacVersion) { $threadsLabel = 'single-threaded (unknown)' }
 $mode         = @(
     if ($NoReencode) { 're-encode off' } else { "re-encode on ($threadsLabel)" }
     if ($NoOpus) { 'opus off' } else { "opus on (${OpusBitrate}k VBR)" }
