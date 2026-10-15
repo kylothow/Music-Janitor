@@ -444,7 +444,7 @@ try {
     $vendorMap = @{}
     if ($metaflac -and $flacVersion -and (-not $NoReencode) -and (-not $Force)) {
         Write-Progress -Activity 'Converting music library' -Status 'Scanning encoder vendor strings...'
-        $allPaths = @($files | ForEach-Object { $_.FullName })
+        $allPaths = @($files.FullName)
         # --with-filename: metaflac prefixes output lines with the file path
         # only when more than one file is passed; a single-file chunk (small
         # library, last chunk) must produce the same parseable format
