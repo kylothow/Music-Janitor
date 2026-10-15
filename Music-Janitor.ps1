@@ -662,7 +662,7 @@ try {
                     Write-Warning "Opus encode FAILED (previous .opus left in place): $($f.FullName) -- $($_.Exception.Message)"
                 }
                 finally {
-                    if (Test-Path -LiteralPath $opusTmp) { Remove-Item -LiteralPath $opusTmp -Force -ErrorAction SilentlyContinue }
+                    Remove-Item -LiteralPath $opusTmp -Force -ErrorAction SilentlyContinue
                     if ($embeddedPic) { Remove-Item -LiteralPath $embeddedPic -Force -ErrorAction SilentlyContinue }
                 }
             }
