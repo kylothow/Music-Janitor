@@ -569,7 +569,7 @@ try {
             # treat a vanished opus (or flaky share) as not up to date rather
             # than aborting
             $opusNow    = $null
-            try { if (Test-Path -LiteralPath $opus) { $opusNow = Get-Item -LiteralPath $opus } } catch { }
+            try { $opusNow = Get-Item -LiteralPath $opus } catch { }
             # up to date only when newer than both the FLAC and, when present,
             # the folder image
             $upToDate = -not $Force -and -not $strippedNow -and $opusNow -and
