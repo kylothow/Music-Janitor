@@ -341,6 +341,7 @@ function Format-Bytes([long]$Bytes) {
 $flacVersion = ''
 $flacVerLine = (& $flac --version) | Select-Object -First 1
 if ("$flacVerLine" -match 'flac\s+([\d.]+)') { $flacVersion = $Matches[1].Trim('.') }
+if (-not $flacVersion) { Write-Warning 'Could not determine the flac version (re-encoding single-threaded).' }
 # flac 1.5.0's threaded encoder still runs the --verify decoder, the in-order
 # frame writes and the input reading on a single (main) thread, so throughput is
 # expected to saturate at about five worker threads; extra workers only contend
